@@ -5,6 +5,7 @@
 #include <driver/memlayout.h>
 #include <common/spinlock.h>
 #include <kernel/printk.h>
+#include <common/rbtree.h>
 
 RefCount alloc_page_cnt;
 
@@ -21,17 +22,15 @@ define_early_init(pages)
 	   add_to_queue(&pages, (QueueNode*)p); 
 }
 
-struct block {
-	struct block * next;
-	int length;
-    int free;
-};
-static struct block free_list[4];
-define_early_init(init_free_list)
+rb_root root[12];
+define_early_init(init_rb_tree)
 {
-    free_list[cpuid()].length = 0;
-    free_list[cpuid()].next = NULL;
-    free_list[cpuid()].free = 0;
+    static struct rb_root_ r[12];
+    static struct rb_node_ node[12];
+    for(int i=0; i<12; i++){
+        root[i] = &(r[i]);
+        root[i]->rb_node = &(node[i]);
+    }
 }
 
 static SpinLock* lock;
@@ -55,73 +54,62 @@ void kfree_page(void* p)
 }
 
 // TODO: kalloc kfree
-struct block* _add_page()
-{
-    struct block* it = (struct block*)kalloc_page();
-    it->next = NULL;
-    it->length = PAGE_SIZE - sizeof(struct block);
-    it->free = 1;
-    return it;
+int mylog2(isize num){
+    isize t = 1;
+    int bit = 0;
+    while(t < num){
+        t <<= 1;
+        bit ++;
+    }
+    return bit;
 }
 
-void merge(struct block* cur){
-    struct block* next = (struct block*)((void*)cur + cur->length + sizeof(struct block));
-    if(next != NULL && next->free == 1){
-        auto it = &free_list[cpuid()];
-        while(it !=NULL && it->next != next){
-            it = it->next;
-        }
-        cur->length += next->length + sizeof(struct block);
-        if(cur->length == PAGE_SIZE - sizeof(struct block) && (i64)cur % PAGE_SIZE == 0){
-            it->next = next->next;
-            kfree_page(cur);
-            return;
-        }
-        it->next = cur;
-        cur->next = next->next;
-    }else{
-        cur->next = free_list[cpuid()].next;
-        free_list[cpuid()].next = cur;
-    }
-    cur->free = 1;
+bool cmp(rb_node lnode,rb_node rnode){
+    return lnode < rnode;
 }
 
 void* kalloc(isize size)
 {
-    struct block* prev = &(free_list[cpuid()]);
-    struct block* cur = free_list[cpuid()].next;
-    size = (size + 7) & ~7;
-
-    while(cur != NULL){
-		if (cur->length >= size) break;
-		prev = cur;
-		cur = cur->next;
-	}
-    if(cur == NULL){
-        cur = _add_page();
+    int bit = mylog2(size+8);
+    int i;
+    printk("1\n");
+    _acquire_spinlock(lock);
+    for(i=bit; i<12; i++){
+        if(_rb_first(root[i]) != NULL) break;
     }
-    
-    if((cur->length - size) >= 16){
-		struct block * temp = (struct block *)((void*)cur + size + sizeof(struct block));
-		temp->next = cur->next;
-		temp->length = cur->length - size - sizeof(struct block);
-        temp->free = 1;
-		prev->next = temp;
-		cur->length = size;
-	}else{
-		prev->next = cur->next;
-	}
-    cur->free = 0;
-
-    return (void*)cur + sizeof(struct block);
+    printk("2\n");
+    if(i >= 12){
+        printk("2.1\n");
+        void* temp = kalloc_page();
+        printk("2.2\n");
+        _rb_insert(temp, root[i-1], cmp);
+        printk("2.4\n");
+        _rb_insert(temp + BIT(i-1), root[i-1], cmp);
+        i--;
+    }
+    printk("3\n");
+    while(i > bit){
+        void* temp = (void*)_rb_first(root[i]);
+        _rb_erase(temp, root[i]);
+        _rb_insert(temp, root[i-1], cmp);
+        _rb_insert(temp + BIT(i-1), root[i-1], cmp);
+        i--;
+    }
+    printk("4\n");
+    void* mem = _rb_first(root[i]);
+    _rb_erase(mem, root[i]);
+    _release_spinlock(lock);
+    *(isize*)mem = BIT(i);
+    return mem + sizeof(isize);
 }
 
 void kfree(void* p)
 {
     if(p == NULL)
         return;
-    // printk("1");
-    struct block* cur = (struct block *)(p - sizeof(struct block));
-    merge(cur);
-
+    p -= sizeof(isize);
+    int bit = mylog2(*(isize*)p);
+    _acquire_spinlock(lock);
+    _rb_insert((rb_node)p, root[bit], cmp);
+    _release_spinlock(lock);
 }
