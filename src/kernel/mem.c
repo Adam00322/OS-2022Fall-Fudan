@@ -22,10 +22,11 @@ define_early_init(pages)
 	   add_to_queue(&pages, (QueueNode*)p); 
 }
 
-static QueueNode* root[4][12-4];
+#define unuse 4
+static QueueNode* root[4][12-unuse];
 // define_early_init(init_root)
 // {
-//     for(int i=0; i<12-4; i++){
+//     for(int i=0; i<12-unuse; i++){
 //         for(int j=0; j<4; j++){
 //             root[j][i] = NULL;
 //         }
@@ -64,7 +65,7 @@ inline int mylog2(isize num){
 }
 
 void merge(QueueNode* p1, QueueNode* p2, isize length){
-    int bit = mylog2(length)-4;
+    int bit = mylog2(length)-unuse;
     auto pre = root[cpuid()][bit];
     auto p = MIN(p1, p2);
     if(pre == NULL){
@@ -72,7 +73,7 @@ void merge(QueueNode* p1, QueueNode* p2, isize length){
         return;
     }else if(pre == p2){
         fetch_from_queue(&root[cpuid()][bit]);
-        if(bit == 11-4){
+        if(bit == 11-unuse){
             kfree_page(p);
         }else{
             length <<= 1;
@@ -85,7 +86,7 @@ void merge(QueueNode* p1, QueueNode* p2, isize length){
         }
         if(pre->next != NULL){
             pre->next = pre->next->next;
-            if(bit == 11-4){
+            if(bit == 11-unuse){
                 kfree_page(p);
             }else{
                 add_to_queue(&root[cpuid()][bit+1], p);
@@ -97,26 +98,36 @@ void merge(QueueNode* p1, QueueNode* p2, isize length){
     
 }
 
-void* kalloc(isize size)
-{
-    int bit = mylog2(size+sizeof(isize));
+void split(int bit){
     int i;
     for(i=bit; i<12; i++){
-        if(root[cpuid()][i-4] != NULL) break;
+        if(root[cpuid()][i-unuse] != NULL) break;
     }
     if(i >= 12){
         void* temp = kalloc_page();
-        add_to_queue(&root[cpuid()][i-1-4], temp);
-        add_to_queue(&root[cpuid()][i-1-4], temp + BIT(i-1));
+        add_to_queue(&root[cpuid()][i-1-unuse], temp);
+        add_to_queue(&root[cpuid()][i-1-unuse], temp + BIT(i-1));
         i--;
     }
     while(i > bit){
-        void* temp = fetch_from_queue(&root[cpuid()][i-4]);
-        add_to_queue(&root[cpuid()][i-1-4], temp);
-        add_to_queue(&root[cpuid()][i-1-4], temp + BIT(i-1));
+        void* temp = fetch_from_queue(&root[cpuid()][i-unuse]);
+        add_to_queue(&root[cpuid()][i-1-unuse], temp);
+        add_to_queue(&root[cpuid()][i-1-unuse], temp + BIT(i-1));
         i--;
     }
-    isize* mem = (isize*)fetch_from_queue(&root[cpuid()][bit-4]);
+}
+
+void* kalloc(isize size)
+{
+    int bit = mylog2(size+sizeof(isize));
+    isize* mem;
+    if(bit >= 12){
+        mem = kalloc_page();
+    }else{
+        while((mem = (isize*)fetch_from_queue(&root[cpuid()][bit-unuse])) == NULL){
+            split(bit);
+        }
+    }
     *mem = BIT(bit)-sizeof(isize);
     return mem + 1;
 }
@@ -132,5 +143,5 @@ void kfree(void* p)
     }else{
         merge(p, p-length, length);
     }
-    // add_to_queue(&root[cpuid()][mylog2(length)-4], p);
+    // add_to_queue(&root[cpuid()][mylog2(length)-unuse], p);
 }
