@@ -22,14 +22,12 @@ define_early_init(pages)
 	   add_to_queue(&pages, (QueueNode*)p); 
 }
 
-rb_root root[12];
+static rb_root root[12];
 define_early_init(init_rb_tree)
 {
     static struct rb_root_ r[12];
-    static struct rb_node_ node[12];
     for(int i=0; i<12; i++){
         root[i] = &(r[i]);
-        root[i]->rb_node = &(node[i]);
     }
 }
 
@@ -70,36 +68,36 @@ bool cmp(rb_node lnode,rb_node rnode){
 
 void* kalloc(isize size)
 {
-    int bit = mylog2(size+8);
+    int bit = mylog2(size+sizeof(isize)+sizeof(struct rb_node_));
     int i;
-    printk("1\n");
     _acquire_spinlock(lock);
+    printk("1\n");
     for(i=bit; i<12; i++){
         if(_rb_first(root[i]) != NULL) break;
     }
     printk("2\n");
     if(i >= 12){
-        printk("2.1\n");
         void* temp = kalloc_page();
-        printk("2.2\n");
         _rb_insert(temp, root[i-1], cmp);
-        printk("2.4\n");
         _rb_insert(temp + BIT(i-1), root[i-1], cmp);
         i--;
     }
     printk("3\n");
     while(i > bit){
-        void* temp = (void*)_rb_first(root[i]);
+        void* temp = _rb_first(root[i]);
         _rb_erase(temp, root[i]);
         _rb_insert(temp, root[i-1], cmp);
         _rb_insert(temp + BIT(i-1), root[i-1], cmp);
         i--;
     }
     printk("4\n");
+    //printk("!%d\n",i);
     void* mem = _rb_first(root[i]);
     _rb_erase(mem, root[i]);
-    _release_spinlock(lock);
+    mem += sizeof(struct rb_node_);
+    printk("5\n");
     *(isize*)mem = BIT(i);
+    _release_spinlock(lock);
     return mem + sizeof(isize);
 }
 
@@ -109,7 +107,8 @@ void kfree(void* p)
         return;
     p -= sizeof(isize);
     int bit = mylog2(*(isize*)p);
+    p -= sizeof(struct rb_node_);
     _acquire_spinlock(lock);
-    _rb_insert((rb_node)p, root[bit], cmp);
+    _rb_insert(p, root[bit], cmp);
     _release_spinlock(lock);
 }
