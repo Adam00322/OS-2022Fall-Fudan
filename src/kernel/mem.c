@@ -22,14 +22,15 @@ define_early_init(pages)
 	   add_to_queue(&pages, (QueueNode*)p); 
 }
 
-static rb_root root[12];
-define_early_init(init_rb_tree)
-{
-    static struct rb_root_ r[12];
-    for(int i=0; i<12; i++){
-        root[i] = &(r[i]);
-    }
-}
+static QueueNode* root[4][12-4];
+// define_early_init(init_root)
+// {
+//     for(int i=0; i<12-4; i++){
+//         for(int j=0; j<4; j++){
+//             root[j][i] = NULL;
+//         }
+//     }
+// }
 
 static SpinLock* lock;
 define_early_init(init_lock)
@@ -52,7 +53,7 @@ void kfree_page(void* p)
 }
 
 // TODO: kalloc kfree
-int mylog2(isize num){
+inline int mylog2(isize num){
     isize t = 1;
     int bit = 0;
     while(t < num){
@@ -62,43 +63,62 @@ int mylog2(isize num){
     return bit;
 }
 
-bool cmp(rb_node lnode,rb_node rnode){
-    return lnode < rnode;
+void merge(QueueNode* p1, QueueNode* p2, isize length){
+    int bit = mylog2(length)-4;
+    auto pre = root[cpuid()][bit];
+    auto p = MIN(p1, p2);
+    if(pre == NULL){
+        add_to_queue(&root[cpuid()][bit], p1);
+        return;
+    }else if(pre == p2){
+        fetch_from_queue(&root[cpuid()][bit]);
+        if(bit == 11-4){
+            kfree_page(p);
+        }else{
+            length <<= 1;
+            add_to_queue(&root[cpuid()][bit+1], p);
+        }
+        return;
+    }else{
+        while(pre->next && pre->next != p2){
+            pre = pre->next;
+        }
+        if(pre->next != NULL){
+            pre->next = pre->next->next;
+            if(bit == 11-4){
+                kfree_page(p);
+            }else{
+                add_to_queue(&root[cpuid()][bit+1], p);
+            }
+        }else{
+            add_to_queue(&root[cpuid()][bit], p1);
+        }
+    }
+    
 }
 
 void* kalloc(isize size)
 {
-    int bit = mylog2(size+sizeof(isize)+sizeof(struct rb_node_));
+    int bit = mylog2(size+sizeof(isize));
     int i;
-    _acquire_spinlock(lock);
-    printk("1\n");
     for(i=bit; i<12; i++){
-        if(_rb_first(root[i]) != NULL) break;
+        if(root[cpuid()][i-4] != NULL) break;
     }
-    printk("2\n");
     if(i >= 12){
         void* temp = kalloc_page();
-        _rb_insert(temp, root[i-1], cmp);
-        _rb_insert(temp + BIT(i-1), root[i-1], cmp);
+        add_to_queue(&root[cpuid()][i-1-4], temp);
+        add_to_queue(&root[cpuid()][i-1-4], temp + BIT(i-1));
         i--;
     }
-    printk("3\n");
     while(i > bit){
-        void* temp = _rb_first(root[i]);
-        _rb_erase(temp, root[i]);
-        _rb_insert(temp, root[i-1], cmp);
-        _rb_insert(temp + BIT(i-1), root[i-1], cmp);
+        void* temp = fetch_from_queue(&root[cpuid()][i-4]);
+        add_to_queue(&root[cpuid()][i-1-4], temp);
+        add_to_queue(&root[cpuid()][i-1-4], temp + BIT(i-1));
         i--;
     }
-    printk("4\n");
-    //printk("!%d\n",i);
-    void* mem = _rb_first(root[i]);
-    _rb_erase(mem, root[i]);
-    mem += sizeof(struct rb_node_);
-    printk("5\n");
-    *(isize*)mem = BIT(i);
-    _release_spinlock(lock);
-    return mem + sizeof(isize);
+    isize* mem = (isize*)fetch_from_queue(&root[cpuid()][bit-4]);
+    *mem = BIT(bit)-sizeof(isize);
+    return mem + 1;
 }
 
 void kfree(void* p)
@@ -106,9 +126,11 @@ void kfree(void* p)
     if(p == NULL)
         return;
     p -= sizeof(isize);
-    int bit = mylog2(*(isize*)p);
-    p -= sizeof(struct rb_node_);
-    _acquire_spinlock(lock);
-    _rb_insert(p, root[bit], cmp);
-    _release_spinlock(lock);
+    isize length = *(isize*)p+sizeof(isize);
+    if((isize)p % (length << 1) == 0){
+        merge(p, p+length, length);
+    }else{
+        merge(p, p-length, length);
+    }
+    // add_to_queue(&root[cpuid()][mylog2(length)-4], p);
 }
