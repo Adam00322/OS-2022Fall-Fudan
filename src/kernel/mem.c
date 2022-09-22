@@ -25,12 +25,7 @@ struct block {
     isize length;
 	struct block * next;
 };
-static struct block free_list[4];
-define_early_init(init_free_list)
-{
-    free_list[cpuid()].length = 0;
-    free_list[cpuid()].next = NULL;
-}
+static struct block free_list[4][12];
 
 static SpinLock* lock;
 define_early_init(init_lock)
@@ -41,18 +36,16 @@ define_early_init(init_lock)
 void* kalloc_page()
 {
     _increment_rc(&alloc_page_cnt);
-    // TODO
     return fetch_from_queue(&pages);
 }
 
 void kfree_page(void* p)
 {
     _decrement_rc(&alloc_page_cnt);
-    // TODO
     add_to_queue(&pages, (QueueNode*)p);
 }
 
-// TODO: kalloc kfree
+
 struct block* _add_page()
 {
     struct block* it = (struct block*)kalloc_page();
@@ -61,22 +54,25 @@ struct block* _add_page()
     return it;
 }
 
+inline int mylog2(isize num){//lowerbound
+    int bit = 0;
+    while(num > 1){
+        num >>= 1;
+        bit ++;
+    }
+    return bit;
+}
+
 void merge(struct block* cur){
     struct block* next = (struct block*)((void*)cur + cur->length + sizeof(isize));
-    auto pre = &free_list[cpuid()];
     if((next->length & 1) == 1 || (isize)next % PAGE_SIZE == 0){//notfree
-        cur->next = free_list[cpuid()].next;
-        free_list[cpuid()].next = cur;
+        cur->next = free_list[cpuid()][mylog2(cur->length)].next;
+        free_list[cpuid()][mylog2(cur->length)].next = cur;
         return;
     }
+    auto pre = &free_list[cpuid()][mylog2(next->length)];
     while(pre->next != next){
         pre = pre->next;
-        if((void*)pre->next + pre->next->length + sizeof(isize) == cur){
-            next = cur;
-            cur = pre->next;
-            next->next = cur->next;
-            break;
-        }
     }
     cur->length += next->length + sizeof(isize);
     if(cur->length == PAGE_SIZE - sizeof(isize)){
@@ -90,27 +86,33 @@ void merge(struct block* cur){
 
 void* kalloc(isize size)
 {
-    struct block* prev = &(free_list[cpuid()]);
-    struct block* cur = free_list[cpuid()].next;
     size = (size + 7) & ~7;
+    int bit = mylog2(size);
+    struct block* prev = &(free_list[cpuid()][bit]);
+    struct block* cur = free_list[cpuid()][bit].next;
 
-    while(cur != NULL){
-		if (cur->length >= size) break;
-		prev = cur;
-		cur = cur->next;
-	}
+    for(int i = bit; i<12; i++){
+        prev = &(free_list[cpuid()][i]);
+        cur = free_list[cpuid()][i].next;
+        while(cur != NULL){
+            if (cur->length >= size) break;
+            prev = cur;
+            cur = cur->next;
+        }
+        if(cur != NULL) break;
+    }
+
     if(cur == NULL){
         cur = _add_page();
     }
-    
+    prev->next = cur->next;
     if((cur->length - size) >= 16){
 		struct block * temp = (struct block *)((void*)cur + size + sizeof(isize));
-		temp->next = cur->next;
 		temp->length = cur->length - size - sizeof(isize);
+        prev = &(free_list[cpuid()][mylog2(temp->length)]);
+        temp->next = prev->next;
 		prev->next = temp;
 		cur->length = size;
-	}else{
-		prev->next = cur->next;
 	}
     cur->length++;//notfree
     return (void*)cur + sizeof(isize);
@@ -123,7 +125,4 @@ void kfree(void* p)
     struct block* cur = p - sizeof(isize);
     cur->length--;//free
     merge(cur);
-    // cur->next = free_list[cpuid()].next;
-    // free_list[cpuid()].next = cur;
-
 }
