@@ -22,16 +22,14 @@ define_early_init(pages)
 }
 
 struct block {
+    isize length;
 	struct block * next;
-	int length;
-    int free;
 };
 static struct block free_list[4];
 define_early_init(init_free_list)
 {
     free_list[cpuid()].length = 0;
     free_list[cpuid()].next = NULL;
-    free_list[cpuid()].free = 0;
 }
 
 static SpinLock* lock;
@@ -59,31 +57,35 @@ struct block* _add_page()
 {
     struct block* it = (struct block*)kalloc_page();
     it->next = NULL;
-    it->length = PAGE_SIZE - sizeof(struct block);
-    it->free = 1;
+    it->length = PAGE_SIZE - sizeof(isize);
     return it;
 }
 
 void merge(struct block* cur){
-    struct block* next = (struct block*)((void*)cur + cur->length + sizeof(struct block));
-    if(next != NULL && next->free == 1){
-        auto it = &free_list[cpuid()];
-        while(it !=NULL && it->next != next){
-            it = it->next;
-        }
-        cur->length += next->length + sizeof(struct block);
-        if(cur->length == PAGE_SIZE - sizeof(struct block) && (i64)cur % PAGE_SIZE == 0){
-            it->next = next->next;
-            kfree_page(cur);
-            return;
-        }
-        it->next = cur;
-        cur->next = next->next;
-    }else{
+    struct block* next = (struct block*)((void*)cur + cur->length + sizeof(isize));
+    auto pre = &free_list[cpuid()];
+    if((next->length & 1) == 1 || (isize)next % PAGE_SIZE == 0){//notfree
         cur->next = free_list[cpuid()].next;
         free_list[cpuid()].next = cur;
+        return;
     }
-    cur->free = 1;
+    while(pre->next != next){
+        pre = pre->next;
+        if((void*)pre->next + pre->next->length + sizeof(isize) == cur){
+            next = cur;
+            cur = pre->next;
+            next->next = cur->next;
+            break;
+        }
+    }
+    cur->length += next->length + sizeof(isize);
+    if(cur->length == PAGE_SIZE - sizeof(isize)){
+        pre->next = next->next;
+        kfree_page(cur);
+        return;
+    }
+    pre->next = next->next;
+    merge(cur);
 }
 
 void* kalloc(isize size)
@@ -102,26 +104,26 @@ void* kalloc(isize size)
     }
     
     if((cur->length - size) >= 16){
-		struct block * temp = (struct block *)((void*)cur + size + sizeof(struct block));
+		struct block * temp = (struct block *)((void*)cur + size + sizeof(isize));
 		temp->next = cur->next;
-		temp->length = cur->length - size - sizeof(struct block);
-        temp->free = 1;
+		temp->length = cur->length - size - sizeof(isize);
 		prev->next = temp;
 		cur->length = size;
 	}else{
 		prev->next = cur->next;
 	}
-    cur->free = 0;
-
-    return (void*)cur + sizeof(struct block);
+    cur->length++;//notfree
+    return (void*)cur + sizeof(isize);
 }
 
 void kfree(void* p)
 {
     if(p == NULL)
         return;
-    // printk("1");
-    struct block* cur = (struct block *)(p - sizeof(struct block));
+    struct block* cur = p - sizeof(isize);
+    cur->length--;//free
     merge(cur);
+    // cur->next = free_list[cpuid()].next;
+    // free_list[cpuid()].next = cur;
 
 }
