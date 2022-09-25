@@ -59,7 +59,7 @@ void kfree(void* p)
 {
     if(p == NULL)
         return;
-    auto head = ((u64)(p - PAGE_BASE((u64)&end)) & ~(PAGE_SIZE-1)) + PAGE_BASE((u64)&end);
+    auto head = (isize)p & ~(PAGE_SIZE-1);
     isize size = *(isize*)head;
     add_to_queue(&slab[size/N], (QueueNode*)p);
 }
