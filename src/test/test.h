@@ -5,3 +5,4 @@
 void alloc_test();
 unsigned rand();
 void srand(unsigned seed);
+void proc_test();
