@@ -15,7 +15,87 @@ static SpinLock tree_lock;
 define_early_init(init_lock){
     init_spinlock(&tree_lock);
 }
-static u64 _pid = 0;
+
+typedef struct pidmap
+{
+    unsigned int nr_free;
+    char page[4096];
+} pidmap_t;
+#define PID_MAX_DEFAULT 0x8000
+#define BITS_PER_BYTE 8
+#define BITS_PER_PAGE (PAGE_SIZE * BITS_PER_BYTE)
+#define BITS_PER_PAGE_MASK (BITS_PER_PAGE - 1)
+static pidmap_t pidmap = { PID_MAX_DEFAULT, {0}};
+static int last_pid = -1;
+
+static int test_and_set_bit(int offset, void *addr)
+{
+    unsigned long mask = 1UL << (offset & (sizeof(unsigned long) * BITS_PER_BYTE - 1));
+    unsigned long *p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
+    unsigned long old = *p;
+ 
+    *p = old | mask;
+ 
+    return (old & mask) != 0;
+}
+
+static void clear_bit(int offset, void *addr)
+{
+    unsigned long mask = 1UL << (offset & (sizeof(unsigned long) * BITS_PER_BYTE - 1));
+    unsigned long *p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
+    unsigned long old = *p;
+    *p = old & ~mask;
+}
+
+static int find_next_zero_bit(void *addr, int size, int offset)
+{
+    unsigned long *p;
+    unsigned long mask;
+ 
+    while (offset < size)
+    {
+        p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
+        mask = 1UL << (offset & (sizeof(unsigned long) * BITS_PER_BYTE - 1));
+ 
+        if ((~(*p) & mask))
+        {
+            break;
+        }
+        ++offset;
+    }
+ 
+    return offset;
+}
+
+static int alloc_pidmap()
+{
+    int pid = last_pid + 1;
+    int offset = pid & BITS_PER_PAGE_MASK;
+    
+    if (!pidmap.nr_free)
+    {
+        return -1;
+    }
+ 
+    offset = find_next_zero_bit(&pidmap.page, BITS_PER_PAGE, offset);
+    if (BITS_PER_PAGE != offset && !test_and_set_bit(offset, &pidmap.page))
+    {
+        --pidmap.nr_free;
+        last_pid = offset;
+        return offset;
+    }
+ 
+    return -1;
+}
+
+static void free_pidmap(int pid)
+{
+    int offset = pid & BITS_PER_PAGE_MASK;
+ 
+    pidmap.nr_free++;
+    clear_bit(offset, &pidmap.page);
+}
+
 
 void set_parent_to_this(struct proc* proc)
 {
@@ -94,6 +174,7 @@ int wait(int* exitcode)
         _detach_from_list(p);
         kfree_page(proc->kstack);
         kfree(proc);
+        free_pidmap(id);
         _release_spinlock(&tree_lock);
         return id;
     }
@@ -131,7 +212,7 @@ void init_proc(struct proc* p)
     p->killed = false;
     p->idle = false;
     _acquire_spinlock(&tree_lock);
-    p->pid = ++_pid;
+    p->pid = alloc_pidmap();
     _release_spinlock(&tree_lock);
     p->state = UNUSED;
     init_sem(&(p->childexit),0);
