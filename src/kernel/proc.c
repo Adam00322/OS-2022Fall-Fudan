@@ -78,6 +78,7 @@ static int alloc_pidmap()
     }
  
     offset = find_next_zero_bit(&pidmap.page, BITS_PER_PAGE, offset);
+    if(offset == BITS_PER_PAGE) offset = find_next_zero_bit(&pidmap.page, offset-1, 30);
     if (BITS_PER_PAGE != offset && !test_and_set_bit(offset, &pidmap.page))
     {
         --pidmap.nr_free;
@@ -92,7 +93,7 @@ static void free_pidmap(int pid)
 {
     int offset = pid & BITS_PER_PAGE_MASK;
  
-    pidmap.nr_free++;
+    if(pid > 29)pidmap.nr_free++;
     clear_bit(offset, &pidmap.page);
 }
 
