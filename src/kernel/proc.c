@@ -121,6 +121,7 @@ NO_RETURN void exit(int code)
     setup_checker(qwq);
     auto this = thisproc();
     this->exitcode = code;
+    free_pgdir(&this->pgdir);
     //TODO clean up file resources
     _acquire_spinlock(&tree_lock);
     ListNode* pre = NULL;
@@ -185,12 +186,35 @@ int wait(int* exitcode)
     return -1;
 }
 
+static struct proc* _findproc;
+static void findproc(int pid, struct proc* p){
+    if(p == NULL || _findproc != NULL) return;
+    if(p->pid == pid && !is_unused(p)){
+        _findproc = p;
+        return;
+    }
+    _for_in_list(t, &p->children){
+        if(t == &p->children) continue;
+        findproc(pid, container_of(t, struct proc, ptnode));
+    }
+}
+
 int kill(int pid)
 {
     // TODO
     // Set the killed flag of the proc to true and return 0.
     // Return -1 if the pid is invalid (proc not found).
-    
+    _findproc = NULL;
+    _acquire_spinlock(&tree_lock);
+    findproc(pid, &root_proc);
+    if(_findproc != NULL){
+        _findproc->killed = true;
+        activate_proc(_findproc);
+        _release_spinlock(&tree_lock);
+        return 0;
+    }
+    _release_spinlock(&tree_lock);
+    return -1;
 }
 
 int start_proc(struct proc* p, void(*entry)(u64), u64 arg)
@@ -230,6 +254,7 @@ void init_proc(struct proc* p)
     init_list_node(&(p->ptnode));
     p->parent = NULL;
     init_schinfo(&(p->schinfo));
+    init_pgdir(&p->pgdir);
     p->kstack = kalloc_page();
     p->ucontext = p->kstack + PAGE_SIZE - 16 - sizeof(UserContext);
     p->kcontext = p->kstack + PAGE_SIZE - 16 - sizeof(UserContext) - sizeof(KernelContext);

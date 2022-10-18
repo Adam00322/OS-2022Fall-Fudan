@@ -26,6 +26,7 @@ define_init(sched)
 {
     for(int i=0; i<NCPU; i++){
         struct proc* p = kalloc(sizeof(struct proc));
+        p->killed = false;
         p->idle = 1;
         p->state = RUNNING;
         cpus[i].sched.thisproc = cpus[i].sched.idle = p;
@@ -69,7 +70,7 @@ bool is_unused(struct proc* p)
 {
     bool r;
     _acquire_sched_lock();
-    r = p->state == ZOMBIE;
+    r = p->state == UNUSED;
     _release_sched_lock();
     return r;
 }
@@ -132,6 +133,7 @@ static void simple_sched(enum procstate new_state)
 {
     auto this = thisproc();
     ASSERT(this->state == RUNNING);
+    if(this->killed && new_state != ZOMBIE) return;
     update_this_state(new_state);
     auto next = pick_next();
     update_this_proc(next);
