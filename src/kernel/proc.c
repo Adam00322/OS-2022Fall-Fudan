@@ -16,6 +16,27 @@ define_early_init(init_lock){
     init_spinlock(&tree_lock);
 }
 
+static hash_map h;
+define_early_init(init_hash){
+    h = kalloc(sizeof(struct hash_map_));
+    _hashmap_init(h);
+}
+
+typedef struct hashpid
+{
+    int pid;
+    struct proc* proc;
+    struct hash_node_ node;
+} hashpid_t;
+
+int hash(hash_node node){
+    return container_of(node, hashpid_t, node)->pid % HASHSIZE;
+}
+
+bool hashcmp(hash_node node1, hash_node node2){
+    return container_of(node1, hashpid_t, node)->pid == container_of(node2, hashpid_t, node)->pid;
+}
+
 typedef struct pidmap
 {
     unsigned int nr_free;
@@ -33,9 +54,7 @@ static int test_and_set_bit(int offset, void *addr)
     unsigned long mask = 1UL << (offset & (sizeof(unsigned long) * BITS_PER_BYTE - 1));
     unsigned long *p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
     unsigned long old = *p;
- 
     *p = old | mask;
- 
     return (old & mask) != 0;
 }
 
@@ -51,7 +70,6 @@ static int find_next_zero_bit(void *addr, int size, int offset)
 {
     unsigned long *p;
     unsigned long mask;
- 
     while (offset < size)
     {
         p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
@@ -63,20 +81,17 @@ static int find_next_zero_bit(void *addr, int size, int offset)
         }
         ++offset;
     }
- 
     return offset;
 }
 
-static int alloc_pidmap()
+static int alloc_pid()
 {
     int pid = last_pid + 1;
     int offset = pid & BITS_PER_PAGE_MASK;
-    
     if (!pidmap.nr_free)
     {
         return -1;
     }
- 
     offset = find_next_zero_bit(&pidmap.page, BITS_PER_PAGE, offset);
     if(offset == BITS_PER_PAGE) offset = find_next_zero_bit(&pidmap.page, offset-1, 30);
     if (BITS_PER_PAGE != offset && !test_and_set_bit(offset, &pidmap.page))
@@ -85,8 +100,18 @@ static int alloc_pidmap()
         last_pid = offset;
         return offset;
     }
- 
     return -1;
+}
+
+static int alloc_pidmap(struct proc* p)
+{
+    int pid = alloc_pid();
+    if(pid == -1) return -1;
+    hashpid_t* hashpid = kalloc(sizeof(hashpid_t));
+    hashpid->pid = pid;
+    hashpid->proc = p;
+    _hashmap_insert(&hashpid->node, h, hash);
+    return pid;
 }
 
 static void free_pidmap(int pid)
@@ -95,6 +120,9 @@ static void free_pidmap(int pid)
  
     if(pid > 29)pidmap.nr_free++;
     clear_bit(offset, &pidmap.page);
+    auto hashnode = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, h, hash, hashcmp);
+    _hashmap_erase(hashnode, h, hash);
+    kfree(container_of(hashnode, hashpid_t, node));
 }
 
 
@@ -186,30 +214,18 @@ int wait(int* exitcode)
     return -1;
 }
 
-static struct proc* _findproc;
-static void findproc(int pid, struct proc* p){
-    if(p == NULL || _findproc != NULL) return;
-    if(p->pid == pid && !is_unused(p)){
-        _findproc = p;
-        return;
-    }
-    _for_in_list(t, &p->children){
-        if(t == &p->children) continue;
-        findproc(pid, container_of(t, struct proc, ptnode));
-    }
-}
-
 int kill(int pid)
 {
     // TODO
     // Set the killed flag of the proc to true and return 0.
     // Return -1 if the pid is invalid (proc not found).
-    _findproc = NULL;
     _acquire_spinlock(&tree_lock);
-    findproc(pid, &root_proc);
-    if(_findproc != NULL){
-        _findproc->killed = true;
-        activate_proc(_findproc);
+    auto p = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, h, hash, hashcmp);
+    if(p != NULL){
+        auto proc = container_of(p, hashpid_t, node)->proc;
+        if(is_unused(proc)) return -1;
+        proc->killed = true;
+        activate_proc(proc);
         _release_spinlock(&tree_lock);
         return 0;
     }
@@ -246,7 +262,7 @@ void init_proc(struct proc* p)
     p->killed = false;
     p->idle = false;
     _acquire_spinlock(&tree_lock);
-    p->pid = alloc_pidmap();
+    p->pid = alloc_pidmap(p);
     _release_spinlock(&tree_lock);
     p->state = UNUSED;
     init_sem(&(p->childexit),0);

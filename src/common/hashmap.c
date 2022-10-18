@@ -6,6 +6,7 @@ void _hashmap_init(hash_map map){
 }
 
 int _hashmap_insert(hash_node node, hash_map map, int (*hash)(hash_node node)){
+    node->next = NULL;
     int b = hash(node);
     hash_node t = map->bullet[b];
     if(t == NULL){

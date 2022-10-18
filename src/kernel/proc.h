@@ -5,6 +5,7 @@
 #include <common/sem.h>
 #include <kernel/schinfo.h>
 #include <kernel/pt.h>
+#include <common/hashmap.h>
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, ZOMBIE };
 
