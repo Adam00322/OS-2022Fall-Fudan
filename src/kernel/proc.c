@@ -209,7 +209,6 @@ int wait(int* exitcode)
         _release_spinlock(&tree_lock);
         return id;
     }
-    PANIC();
     _release_spinlock(&tree_lock);
     return -1;
 }
