@@ -195,7 +195,7 @@ int wait(int* exitcode)
     auto this = thisproc();
     if(_empty_list(&this->children))
         return -1;
-    wait_sem(&this->childexit);
+    if(!wait_sem(&this->childexit)) return -1;
     _acquire_spinlock(&tree_lock);
     auto p = this->children.prev;
     auto proc = container_of(p, struct proc, ptnode);
