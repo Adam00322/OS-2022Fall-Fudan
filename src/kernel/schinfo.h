@@ -3,7 +3,7 @@
 #include <common/list.h>
 #include <common/rbtree.h>
 
-#define sched_latency 20
+#define sched_latency 8
 #define min_lantency 1
 
 struct proc; // dont include proc.h here

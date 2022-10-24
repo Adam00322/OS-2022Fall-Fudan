@@ -19,4 +19,11 @@ typedef struct buf {
      * Add other necessary elements. It depends on you.
      */
     /* TODO: Lab5 driver. */
+    ListNode bnode;
+    Semaphore bufsem;
 } buf;
+
+int bufqueue_push(Queue* q, buf* b);
+void bufqueue_pop(Queue* q);
+buf* bufqueue_front(Queue* q);
+bool bufqueue_empty(Queue* q);
