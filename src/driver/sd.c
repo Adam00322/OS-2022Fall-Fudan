@@ -153,6 +153,7 @@ void sd_intr() {
      * TODO: Lab5 driver.
      */
     buf* b = bufqueue_front(&bufQueue);
+    arch_dsb_sy();
     if(b->flags & B_DIRTY){
         if(sdWaitForInterrupt(INT_DATA_DONE)){
             PANIC();
@@ -163,8 +164,10 @@ void sd_intr() {
         }
         int done = 0;
         u32* intbuf = (u32*)b->data;
+        arch_dsb_sy();
         while (done < 128)
             intbuf[done++] = get_EMMC_DATA();
+        arch_dsb_sy();
         if(sdWaitForInterrupt(INT_DATA_DONE)){
             PANIC();
         }
