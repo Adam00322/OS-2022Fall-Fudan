@@ -203,7 +203,10 @@ void sdrw(buf* b) {
     }
     _release_spinlock(&sdlock);
     arch_dsb_sy();
-    wait_sem(&b->bufsem);
+    while(1){
+        if(!wait_sem(&b->bufsem)) break;
+        if(b->flags == B_VALID) break;
+    }
     arch_dsb_sy();
 }
 

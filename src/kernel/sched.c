@@ -107,14 +107,14 @@ bool _activate_proc(struct proc* p, bool onalert)
     // if the proc->state is SLEEPING/UNUSED, set the process state to RUNNABLE, add it to the sched queue, and return true
     // if the proc->state is DEEPSLEEING, do nothing if onalert or activate it if else, and return the corresponding value.
     _acquire_sched_lock();
-    if(p->state == RUNNING || p->state == RUNNABLE || p->state == ZOMBIE){
+    if(p->state == RUNNING || p->state == RUNNABLE || p->state == ZOMBIE || (p->state == DEEPSLEEPING && onalert)){
         _release_sched_lock();
         return false;
     }
     p->state = RUNNABLE;
     p->schinfo.vruntime = MAX(p->schinfo.vruntime, min_vruntime());
     weight_sum += p->schinfo.weight;
-    _rb_insert(&p->schinfo.node, &root, cmp);
+    ASSERT(!_rb_insert(&p->schinfo.node, &root, cmp));
     _release_sched_lock();
     return true;
 }
@@ -128,7 +128,7 @@ static void update_this_state(enum procstate new_state)
     p->state = new_state;
     if(new_state == RUNNABLE && !p->idle){
         p->schinfo.vruntime = MAX(p->schinfo.vruntime, min_vruntime());
-        _rb_insert(&p->schinfo.node, &root, cmp);
+        ASSERT(!_rb_insert(&p->schinfo.node, &root, cmp));
     }else if(new_state == SLEEPING || new_state == ZOMBIE){
         weight_sum -= p->schinfo.weight;
     }
