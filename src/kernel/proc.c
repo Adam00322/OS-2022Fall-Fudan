@@ -224,7 +224,7 @@ int kill(int pid)
         auto proc = container_of(p, hashpid_t, node)->proc;
         if(is_unused(proc)) return -1;
         proc->killed = true;
-        activate_proc(proc);
+        alert_proc(proc);
         _release_spinlock(&tree_lock);
         return 0;
     }
