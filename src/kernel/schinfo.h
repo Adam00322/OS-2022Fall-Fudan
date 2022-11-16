@@ -37,3 +37,10 @@ static const int prio_to_weight[40]={
 /* 10 */ 110, 87, 70, 56, 45,
 /* 15 */ 36, 29, 23, 18, 15
 };
+
+// embedded data for containers
+struct schqueue
+{
+    // TODO: customize your sched queue
+    
+};

@@ -62,7 +62,7 @@ struct proc* thisproc()
     return cpus[cpuid()].sched.thisproc;
 }
 
-void init_schinfo(struct schinfo* p)
+void init_schinfo(struct schinfo* p, bool group)
 {
     // TODO: initialize your customized schinfo for every newly-created process
     p->vruntime = 0;
@@ -117,6 +117,12 @@ bool _activate_proc(struct proc* p, bool onalert)
     ASSERT(!_rb_insert(&p->schinfo.node, &root, cmp));
     _release_sched_lock();
     return true;
+}
+
+void activate_group(struct container* group)
+{
+    // TODO: add the schinfo node of the group to the schqueue of its parent
+
 }
 
 static void update_this_state(enum procstate new_state)
