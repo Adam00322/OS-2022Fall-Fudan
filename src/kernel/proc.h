@@ -7,6 +7,7 @@
 #include <kernel/pt.h>
 #include <common/hashmap.h>
 #include <kernel/container.h>
+#include <common/bitmap.h>
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, DEEPSLEEPING, ZOMBIE };
 

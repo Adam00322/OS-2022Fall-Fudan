@@ -2,6 +2,17 @@
 
 #include <kernel/proc.h>
 #include <kernel/schinfo.h>
+#include <common/bitmap.h>
+
+#define MAX_CONTAINER_PID 256
+
+typedef struct pidmap
+{
+    BitmapCell* bitmap;
+    int last_pid;
+    int size;
+} pidmap_t;
+
 
 struct container
 {
@@ -12,7 +23,8 @@ struct container
     struct schqueue schqueue;
 
     // TODO: namespace (local pid?)
-
+    pidmap_t pidmap;
+    SpinLock pidlock;
 };
 
 struct container* create_container(void (*root_entry)(), u64 arg);

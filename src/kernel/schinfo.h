@@ -24,7 +24,7 @@ struct schinfo
     int prio;
     int weight;
     struct rb_node_ node;
-    // ListNode rq;
+    bool iscontainer;
 };
 
 static const int prio_to_weight[40]={
@@ -42,5 +42,6 @@ static const int prio_to_weight[40]={
 struct schqueue
 {
     // TODO: customize your sched queue
-    
+    struct rb_root_ root;
+    int weight_sum;
 };

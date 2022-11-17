@@ -7,6 +7,7 @@
 #include <kernel/printk.h>
 
 struct proc root_proc;
+extern struct container root_container;
 
 void kernel_entry();
 void proc_entry();
@@ -37,94 +38,53 @@ bool hashcmp(hash_node node1, hash_node node2){
     return container_of(node1, hashpid_t, node)->pid == container_of(node2, hashpid_t, node)->pid;
 }
 
-typedef struct pidmap
-{
-    unsigned int nr_free;
-    char page[4096];
-} pidmap_t;
-#define PID_MAX_DEFAULT 0x8000
-#define BITS_PER_BYTE 8
-#define BITS_PER_PAGE (PAGE_SIZE * BITS_PER_BYTE)
-#define BITS_PER_PAGE_MASK (BITS_PER_PAGE - 1)
-static pidmap_t pidmap = { PID_MAX_DEFAULT, {0}};
-static int last_pid = -1;
-
-static int test_and_set_bit(int offset, void *addr)
-{
-    unsigned long mask = 1UL << (offset & (sizeof(unsigned long) * BITS_PER_BYTE - 1));
-    unsigned long *p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
-    unsigned long old = *p;
-    *p = old | mask;
-    return (old & mask) != 0;
+static pidmap_t globalpidmap;
+define_early_init(init_globalpidmap){
+    globalpidmap.bitmap = kalloc_page();
+    memset(globalpidmap.bitmap, 0, PAGE_SIZE);
+    globalpidmap.last_pid = -1;
+    globalpidmap.size = PAGE_SIZE * 8;
 }
 
-static void clear_bit(int offset, void *addr)
+static int alloc_pid(pidmap_t* pidmap)
 {
-    unsigned long mask = 1UL << (offset & (sizeof(unsigned long) * BITS_PER_BYTE - 1));
-    unsigned long *p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
-    unsigned long old = *p;
-    *p = old & ~mask;
-}
-
-static int find_next_zero_bit(void *addr, int size, int offset)
-{
-    unsigned long *p;
-    unsigned long mask;
-    while (offset < size)
-    {
-        p = ((unsigned long*)addr) + (offset >> (sizeof(unsigned long) + 1));
-        mask = 1UL << (offset & (sizeof(unsigned long) * BITS_PER_BYTE - 1));
- 
-        if ((~(*p) & mask))
-        {
-            break;
+    BitmapCell* bitmap = pidmap->bitmap;
+    int pid = pidmap->last_pid + 1;
+    while (pid < pidmap->size && bitmap_get(bitmap, pid)){
+        ++pid;
+    }
+    if(pid == pidmap->size){
+        pid = 0;
+        while (pid <= pidmap->last_pid && bitmap_get(bitmap, pid)){
+            ++pid;
         }
-        ++offset;
     }
-    return offset;
-}
-
-static int alloc_pid()
-{
-    int pid = last_pid + 1;
-    int offset = pid & BITS_PER_PAGE_MASK;
-    if (!pidmap.nr_free)
-    {
-        return -1;
-    }
-    offset = find_next_zero_bit(&pidmap.page, BITS_PER_PAGE, offset);
-    if(offset == BITS_PER_PAGE) offset = find_next_zero_bit(&pidmap.page, offset-1, 30);
-    if (BITS_PER_PAGE != offset && !test_and_set_bit(offset, &pidmap.page))
-    {
-        --pidmap.nr_free;
-        last_pid = offset;
-        return offset;
+    if (pidmap->size != pid && !bitmap_get(bitmap, pid)){
+        pidmap->last_pid = pid;
+        bitmap_set(bitmap, pid);
+        return pid;
     }
     return -1;
 }
 
-static int alloc_pidmap(struct proc* p)
+static INLINE void free_pid(int pid, pidmap_t* pidmap)
 {
-    int pid = alloc_pid();
-    if(pid == -1) return -1;
-    hashpid_t* hashpid = kalloc(sizeof(hashpid_t));
-    hashpid->pid = pid;
-    hashpid->proc = p;
-    _hashmap_insert(&hashpid->node, h, hash);
-    return pid;
+    bitmap_clear(pidmap->bitmap, pid);
 }
 
-static void free_pidmap(int pid)
+static void alloc_hashpid(struct proc* p)
 {
-    int offset = pid & BITS_PER_PAGE_MASK;
- 
-    if(pid > 29)pidmap.nr_free++;
-    clear_bit(offset, &pidmap.page);
+    hashpid_t* hashpid = kalloc(sizeof(hashpid_t));
+    hashpid->pid = p->pid;
+    hashpid->proc = p;
+    _hashmap_insert(&hashpid->node, h, hash);
+}
+
+static void free_hashpid(int pid){
     auto hashnode = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, h, hash, hashcmp);
     _hashmap_erase(hashnode, h, hash);
     kfree(container_of(hashnode, hashpid_t, node));
 }
-
 
 void set_parent_to_this(struct proc* proc)
 {
@@ -148,22 +108,24 @@ NO_RETURN void exit(int code)
     // NOTE: be careful of concurrency
     setup_checker(qwq);
     auto this = thisproc();
+    ASSERT(this != this->container->rootproc && !this->idle);
     this->exitcode = code;
     free_pgdir(&this->pgdir);
     //TODO clean up file resources
+    struct proc* rootproc = this->container->rootproc;
     _acquire_spinlock(&tree_lock);
     ListNode* pre = NULL;
     _for_in_list(p, &this->children){
         if(pre != NULL && pre != &this->children){
             auto proc = container_of(pre, struct proc, ptnode);
-            proc->parent = &root_proc;
-            auto t = &root_proc.children;
+            proc->parent = rootproc;
+            auto t = &rootproc->children;
             if(is_zombie(proc)){
                 pre->prev = t->prev;
                 pre->next = t;
                 t->prev->next = pre;
                 t->prev = pre;
-                post_sem(&root_proc.childexit);
+                post_sem(&rootproc->childexit);
             }else{
                 _insert_into_list(t, pre);
             }
@@ -201,13 +163,16 @@ int wait(int* exitcode, int* pid)
     auto proc = container_of(p, struct proc, ptnode);
     if(is_zombie(proc)){
         *exitcode = proc->exitcode;
-        int id = proc->pid;
+        *pid = proc->pid;
+        free_pid(proc->pid, &globalpidmap);
+        free_hashpid(proc->pid);
+        int localpid = proc->localpid;
+        free_pid(localpid, &proc->container->pidmap);
         _detach_from_list(p);
         kfree_page(proc->kstack);
         kfree(proc);
-        free_pidmap(id);
         _release_spinlock(&tree_lock);
-        return id;
+        return localpid;
     }
     _release_spinlock(&tree_lock);
     return -1;
@@ -248,9 +213,11 @@ int start_proc(struct proc* p, void(*entry)(u64), u64 arg)
     p->kcontext->lr = (u64)&proc_entry;
     p->kcontext->x0 = (u64)entry;
     p->kcontext->x1 = (u64)arg;
-    int id = p->pid;
+    _acquire_spinlock(&p->container->pidlock);
+    p->localpid = alloc_pid(&p->container->pidmap);
+    _release_spinlock(&p->container->pidlock);
     activate_proc(p);
-    return id;
+    return p->localpid;
 }
 
 void init_proc(struct proc* p)
@@ -261,15 +228,17 @@ void init_proc(struct proc* p)
     p->killed = false;
     p->idle = false;
     _acquire_spinlock(&tree_lock);
-    p->pid = alloc_pidmap(p);
+    p->pid = alloc_pid(&globalpidmap);
+    alloc_hashpid(p);
     _release_spinlock(&tree_lock);
     p->state = UNUSED;
     init_sem(&(p->childexit),0);
     init_list_node(&(p->children));
     init_list_node(&(p->ptnode));
     p->parent = NULL;
-    init_schinfo(&(p->schinfo));
+    init_schinfo(&(p->schinfo), 0);
     init_pgdir(&p->pgdir);
+    p->container = &root_container;
     p->kstack = kalloc_page();
     memset(p->kstack, 0, PAGE_SIZE);
     p->ucontext = p->kstack + PAGE_SIZE - 16 - sizeof(UserContext);
