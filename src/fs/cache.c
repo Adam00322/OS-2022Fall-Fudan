@@ -21,6 +21,7 @@ struct LOG {
     u32 log_used;
     u32 log_size;
     u32 outstanding;
+    bool committing;
 } log;
 
 // read the content from disk.
@@ -153,6 +154,7 @@ void init_bcache(const SuperBlock* _sblock, const BlockDevice* _device) {
     log.log_used = 0;
     log.log_size = MIN(LOG_MAX_SIZE, sblock->num_log_blocks - 1);
     log.outstanding = 0;
+    log.committing = false;
 
     read_header();
     log_wb();
@@ -162,7 +164,7 @@ void init_bcache(const SuperBlock* _sblock, const BlockDevice* _device) {
 static void cache_begin_op(OpContext* ctx) {
     // TODO
     _acquire_spinlock(&log.lock);
-    while(log.log_used + OP_MAX_NUM_BLOCKS > log.log_size){
+    while(log.log_used + OP_MAX_NUM_BLOCKS > log.log_size || log.committing){
         _lock_sem(&log.begin);
         _release_spinlock(&log.lock);
         _wait_sem(&log.begin, false);
@@ -206,6 +208,8 @@ static void cache_end_op(OpContext* ctx) {
     ctx->rm = 0;
     log.outstanding--;
     if(log.outstanding == 0){
+        log.committing = true;
+        _release_spinlock(&log.lock);
         for(usize i = 0; i < header.num_blocks; i++){
             Block* logb = cache_acquire(sblock->log_start + i + 1);
             Block* sdb = cache_acquire(header.block_no[i]);
@@ -217,6 +221,8 @@ static void cache_end_op(OpContext* ctx) {
         write_header();
         log.log_used -= header.num_blocks;
         log_wb();
+        log.committing = false;
+        _acquire_spinlock(&log.lock);
         post_all_sem(&log.end);
         post_all_sem(&log.begin);
         _release_spinlock(&log.lock);
