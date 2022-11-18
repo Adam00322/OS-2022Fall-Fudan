@@ -3,7 +3,7 @@
 #include <common/list.h>
 #include <common/rbtree.h>
 
-#define sched_latency 6
+// #define sched_latency 22
 #define min_lantency 1
 
 struct proc; // dont include proc.h here
@@ -44,4 +44,6 @@ struct schqueue
     // TODO: customize your sched queue
     struct rb_root_ root;
     int weight_sum;
+    int sched_latency;
+    bool Running;
 };

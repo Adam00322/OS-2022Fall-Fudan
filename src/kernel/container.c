@@ -24,10 +24,8 @@ void init_container(struct container* container)
     init_schinfo(&container->schinfo, true);
     init_schqueue(&container->schqueue);
     // TODO: initialize namespace (local pid allocator)
-    container->pidmap.bitmap = kalloc(MAX_CONTAINER_PID / 8);
     memset(container->pidmap.bitmap, 0, MAX_CONTAINER_PID / 8);
     container->pidmap.last_pid = -1;
-    container->pidmap.size = MAX_CONTAINER_PID;
     init_spinlock(&container->pidlock);
 }
 

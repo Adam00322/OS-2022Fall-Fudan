@@ -8,9 +8,8 @@
 
 typedef struct pidmap
 {
-    BitmapCell* bitmap;
+    Bitmap(bitmap, MAX_CONTAINER_PID);
     int last_pid;
-    int size;
 } pidmap_t;
 
 

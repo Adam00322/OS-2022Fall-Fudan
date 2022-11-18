@@ -17,10 +17,9 @@ define_early_init(init_lock){
     init_spinlock(&tree_lock);
 }
 
-static hash_map h;
+static struct hash_map_ h;
 define_early_init(init_hash){
-    h = kalloc(sizeof(struct hash_map_));
-    _hashmap_init(h);
+    _hashmap_init(&h);
 }
 
 typedef struct hashpid
@@ -38,28 +37,26 @@ bool hashcmp(hash_node node1, hash_node node2){
     return container_of(node1, hashpid_t, node)->pid == container_of(node2, hashpid_t, node)->pid;
 }
 
-static pidmap_t globalpidmap;
+pidmap_t globalpidmap;
 define_early_init(init_globalpidmap){
-    globalpidmap.bitmap = kalloc_page();
-    memset(globalpidmap.bitmap, 0, PAGE_SIZE);
+    memset(globalpidmap.bitmap, 0, MAX_CONTAINER_PID / 8);
     globalpidmap.last_pid = -1;
-    globalpidmap.size = PAGE_SIZE * 8;
 }
 
 static int alloc_pid(pidmap_t* pidmap)
 {
     BitmapCell* bitmap = pidmap->bitmap;
     int pid = pidmap->last_pid + 1;
-    while (pid < pidmap->size && bitmap_get(bitmap, pid)){
+    while (pid < MAX_CONTAINER_PID && bitmap_get(bitmap, pid)){
         ++pid;
     }
-    if(pid == pidmap->size){
+    if(pid == MAX_CONTAINER_PID){
         pid = 0;
         while (pid <= pidmap->last_pid && bitmap_get(bitmap, pid)){
             ++pid;
         }
     }
-    if (pidmap->size != pid && !bitmap_get(bitmap, pid)){
+    if (MAX_CONTAINER_PID != pid && !bitmap_get(bitmap, pid)){
         pidmap->last_pid = pid;
         bitmap_set(bitmap, pid);
         return pid;
@@ -77,12 +74,12 @@ static void alloc_hashpid(struct proc* p)
     hashpid_t* hashpid = kalloc(sizeof(hashpid_t));
     hashpid->pid = p->pid;
     hashpid->proc = p;
-    _hashmap_insert(&hashpid->node, h, hash);
+    _hashmap_insert(&hashpid->node, &h, hash);
 }
 
 static void free_hashpid(int pid){
-    auto hashnode = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, h, hash, hashcmp);
-    _hashmap_erase(hashnode, h, hash);
+    auto hashnode = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, &h, hash, hashcmp);
+    _hashmap_erase(hashnode, &h, hash);
     kfree(container_of(hashnode, hashpid_t, node));
 }
 
@@ -184,7 +181,7 @@ int kill(int pid)
     // Set the killed flag of the proc to true and return 0.
     // Return -1 if the pid is invalid (proc not found).
     _acquire_spinlock(&tree_lock);
-    auto p = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, h, hash, hashcmp);
+    auto p = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, &h, hash, hashcmp);
     if(p != NULL){
         auto proc = container_of(p, hashpid_t, node)->proc;
         if(is_unused(proc)) return -1;
