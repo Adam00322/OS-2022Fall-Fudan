@@ -74,7 +74,7 @@ void init_schqueue(struct schqueue* s)
     s->root.rb_node = NULL;
     s->weight_sum = 0;
     s->Running = false;
-    s->sched_latency = 22;
+    s->sched_latency = 6;
 }
 
 void _acquire_sched_lock()
