@@ -7,7 +7,8 @@
 #define REVERSED_PAGES 1024 //Reversed pages
 
 struct page{
-	RefCount ref;
+	int ref;
+	SpinLock lock;
 };
 
 WARN_RESULT void* kalloc_page();

@@ -2,6 +2,8 @@
 #include <kernel/mem.h>
 #include <common/string.h>
 #include <aarch64/intrinsic.h>
+#include <kernel/paging.h>
+#include <kernel/sched.h>
 
 PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
 {
@@ -13,7 +15,6 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
     PTEntriesPtr pt1 = NULL;
     PTEntriesPtr pt2 = NULL;
     PTEntriesPtr pt3 = NULL;
-    // PTEntriesPtr pa;
     if((pt0 = pgdir->pt) != NULL){
         if(pt0[VA_PART0(va)] != NULL){
             pt1 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt0[VA_PART0(va)]));
@@ -22,8 +23,6 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
                 if(pt2[VA_PART2(va)] != NULL){
                     pt3 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt2[VA_PART2(va)]));
                     return &pt3[VA_PART3(va)];
-                    // if((pa = pt3[VA_PART3(va)]) != NULL)
-                    //     return pa;
                 }
             }
         }
@@ -58,6 +57,15 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
 void init_pgdir(struct pgdir* pgdir)
 {
     pgdir->pt = NULL;
+    init_spinlock(&pgdir->lock);
+    init_sections(&pgdir->section_head);
+    pgdir->online = false;
+}
+
+void vmmap(struct pgdir* pd, u64 va, void* ka, u64 flags)
+{
+    PTEntriesPtr pt = get_pte(pd, va, true);
+    *pt = K2P((u64)ka|flags);
 }
 
 void free_pgdir(struct pgdir* pgdir)
@@ -66,6 +74,7 @@ void free_pgdir(struct pgdir* pgdir)
     // Free pages used by the page table. If pgdir->pt=NULL, do nothing.
     // DONT FREE PAGES DESCRIBED BY THE PAGE TABLE
     if(pgdir->pt != NULL){
+        free_sections(pgdir);
         PTEntriesPtr pt0 = pgdir->pt;
         for(int i = 0; i < N_PTE_PER_TABLE; i++){
             if(pt0[i] & PTE_VALID){
@@ -90,10 +99,13 @@ void free_pgdir(struct pgdir* pgdir)
 void attach_pgdir(struct pgdir* pgdir)
 {
     extern PTEntries invalid_pt;
-    if (pgdir->pt)
+    thisproc()->pgdir.online = false;
+    if (pgdir->pt){
         arch_set_ttbr0(K2P(pgdir->pt));
-    else
+        pgdir->online = true;
+    }else{
         arch_set_ttbr0(K2P(&invalid_pt));
+    }
 }
 
 

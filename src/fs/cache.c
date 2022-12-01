@@ -238,10 +238,10 @@ static void cache_end_op(OpContext* ctx) {
 // hint: you can use `cache_acquire`/`cache_sync` to read/write blocks.
 static usize cache_alloc(OpContext* ctx) {
     // TODO
-    for(u32 i = 0; i < sblock->num_blocks; i += BIT_PER_BLOCK){
+    for(u32 i = 0; i < MIN(sblock->num_blocks, SWAP_START); i += BIT_PER_BLOCK){
         Block* b = cache_acquire(sblock->bitmap_start + i / BIT_PER_BLOCK);
         BitmapCell* bm = b->data;
-        for(u32 j = 0; j < BIT_PER_BLOCK && i + j < sblock->num_blocks; j++){
+        for(u32 j = 0; j < BIT_PER_BLOCK && i + j < MIN(sblock->num_blocks, SWAP_START); j++){
             if(!bitmap_get(bm, j)){
                 bitmap_set(bm, j);
                 cache_sync(ctx, b);
@@ -267,6 +267,33 @@ static void cache_free(OpContext* ctx, usize block_no) {
     bitmap_clear(bm, block_no % BIT_PER_BLOCK);
     cache_sync(ctx, b);
     cache_release(b);
+}
+
+//swap
+static Bitmap(swap_bitmap, SWAP_SIZE);
+static SpinLock swap_lock;
+define_init(init_swap){
+    init_bitmap(swap_bitmap, SWAP_SIZE);
+    init_spinlock(&swap_lock);
+}
+
+void release_8_blocks(u32 bno){
+    _acquire_spinlock(&swap_lock);
+    bitmap_clear(swap_bitmap, (bno - SWAP_START) / 8);
+    _release_spinlock(&swap_lock);
+}
+
+u32 find_and_set_8_blocks(){
+    _acquire_spinlock(&swap_lock);
+    for(u32 i = 0; i < SWAP_SIZE; i++){
+        if(!bitmap_get(swap_bitmap, i)){
+            bitmap_set(swap_bitmap, i);
+            _release_spinlock(&swap_lock);
+            return SWAP_START + i*8;
+        }
+    }
+    _release_spinlock(&swap_lock);
+    PANIC();
 }
 
 BlockCache bcache = {

@@ -12,6 +12,10 @@
 // evict some blocks in `acquire` to keep block cache small.
 #define EVICTION_THRESHOLD 20
 
+#define SWAP_START 800
+#define SWAP_END 1000
+#define SWAP_SIZE 25
+
 // hint: `cache_test` only requires `block_no`, `valid` and `data` are present
 // in this struct. All other struct members can be customized by yourself.
 // for example, if you want to implement LFU strategy instead, you can add a

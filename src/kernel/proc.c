@@ -249,6 +249,27 @@ struct proc* create_proc()
     return p;
 }
 
+static struct proc* offline_proc;
+static void find_offline_proc(struct proc* fa){
+    if(offline_proc != NULL) return;
+    _for_in_list(p, &fa->children){
+        if(p == &fa->children) continue;
+        auto proc = container_of(p, struct proc, ptnode);
+        if(proc->state != ZOMBIE && proc->pgdir.online == false) offline_proc = proc;
+        find_offline_proc(proc);
+    }
+}
+
+struct proc* get_offline_proc(){
+    _acquire_spinlock(&tree_lock);
+    offline_proc = NULL;
+    find_offline_proc(&root_proc);
+    auto proc = offline_proc;
+    _release_spinlock(&tree_lock);
+    if(proc == NULL) PANIC();
+    return proc;
+}
+
 define_init(root_proc)
 {
     init_proc(&root_proc);

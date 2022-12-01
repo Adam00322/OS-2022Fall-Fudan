@@ -3,6 +3,8 @@
 #include <kernel/init.h>
 #include <kernel/mem.h>
 #include <driver/memlayout.h>
+#include <common/string.h>
+#include <fs/cache.h>
 
 RefCount alloc_page_cnt;
 
@@ -15,23 +17,44 @@ static QueueNode* pages;
 extern char end[];
 define_early_init(pages)
 {
-    for (u64 p = PAGE_BASE((u64)&end) + PAGE_SIZE; p < P2K(PHYSTOP); p += PAGE_SIZE)
+    for (u64 p = PAGE_BASE((u64)&end) + PAGE_SIZE; p < P2K(PHYSTOP); p += PAGE_SIZE){
 	   add_to_queue(&pages, (QueueNode*)p); 
+        _increment_rc(&alloc_page_cnt);
+    }
+    fetch_from_queue(&pages);
+    _decrement_rc(&alloc_page_cnt);
+}
+
+static void* zero_page;
+define_init(zero_page){
+    zero_page = kalloc_page();
+    memset(zero_page, 0, PAGE_SIZE);
 }
 
 #define N 16
 static QueueNode* slab[PAGE_SIZE/N];
+static struct page page_ref[PHYSTOP/PAGE_SIZE];
 
 void* kalloc_page()
 {
-    _increment_rc(&alloc_page_cnt);
-    return fetch_from_queue(&pages);
+    _decrement_rc(&alloc_page_cnt);
+    auto p = fetch_from_queue(&pages);
+    auto page = page_ref[K2P(p) / PAGE_SIZE];
+    page.ref = 1;
+    init_spinlock(&page.lock);
+    return p;
 }
 
 void kfree_page(void* p)
 {
-    _decrement_rc(&alloc_page_cnt);
-    add_to_queue(&pages, (QueueNode*)p);
+    _increment_rc(&alloc_page_cnt);
+    auto page = page_ref[K2P(p) / PAGE_SIZE];
+    _acquire_spinlock(&page.lock);
+    page.ref--;
+    if(page.ref == 0){
+        add_to_queue(&pages, (QueueNode*)p);
+    }
+    _release_spinlock(&page.lock);
 }
 
 
@@ -62,4 +85,27 @@ void kfree(void* p)
     auto head = (isize)p & ~(PAGE_SIZE-1);
     isize size = *(isize*)head;
     add_to_queue(&slab[size/N], (QueueNode*)p);
+}
+
+u64 left_page_cnt(){
+    return alloc_page_cnt.count;
+}
+
+void* get_zero_page(){
+    return zero_page;
+}
+
+u32 write_page_to_disk(void* ka){
+    u32 bno = find_and_set_8_blocks();
+    for(u32 i = 0; i < 8; i++){
+        block_device.write(bno + i, ka + i * BLOCK_SIZE);
+    }
+    return bno;
+}
+
+void read_page_from_disk(void* ka, u32 bno){
+    for(u32 i = 0; i < 8; i++){
+        block_device.read(bno + i, ka + i * BLOCK_SIZE);
+    }
+    release_8_blocks(bno);
 }

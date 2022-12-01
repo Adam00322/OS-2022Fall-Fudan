@@ -19,6 +19,16 @@ define_rest_init(paging){
 
 u64 sbrk(i64 size){
 	//TODO
+	_for_in_list(p, &thisproc()->pgdir.section_head){
+		if(p == &thisproc()->pgdir.section_head) continue;
+		auto section = container_of(p, struct section, stnode);
+		if(section->flags == ST_HEAP){
+			u64 end = section->end;
+			section->end += size*PAGE_SIZE;
+			return end;
+		}
+	}
+	PANIC();
 }	
 
 
@@ -48,4 +58,21 @@ int pgfault(u64 iss){
 	struct pgdir* pd = &p->pgdir;
 	u64 addr = arch_get_far();
 	//TODO
+}
+
+void init_sections(ListNode* section_head){
+	struct section* s = kalloc(sizeof(struct section));
+	s->flags = ST_HEAP;
+	init_sleeplock(&s->sleeplock);
+	s->begin = 0xc0000000;
+	s->end = 0xc0000000;
+	_insert_into_list(section_head, &s->stnode);
+}
+
+void free_sections(struct pgdir* pd){
+	_for_in_list(p, &pd->section_head){
+		if(p == &pd->section_head) continue;
+		auto section = container_of(p, struct section, stnode);
+
+	}
 }
