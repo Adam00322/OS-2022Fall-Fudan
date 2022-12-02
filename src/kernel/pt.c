@@ -4,6 +4,7 @@
 #include <aarch64/intrinsic.h>
 #include <kernel/paging.h>
 #include <kernel/sched.h>
+#include <kernel/printk.h>
 
 PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
 {
@@ -16,11 +17,11 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
     PTEntriesPtr pt2 = NULL;
     PTEntriesPtr pt3 = NULL;
     if((pt0 = pgdir->pt) != NULL){
-        if(pt0[VA_PART0(va)] != NULL){
+        if(pt0[VA_PART0(va)] & PTE_VALID){
             pt1 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt0[VA_PART0(va)]));
-            if(pt1[VA_PART1(va)] != NULL){
+            if(pt1[VA_PART1(va)] & PTE_VALID){
                 pt2 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt1[VA_PART1(va)]));
-                if(pt2[VA_PART2(va)] != NULL){
+                if(pt2[VA_PART2(va)] & PTE_VALID){
                     pt3 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt2[VA_PART2(va)]));
                     return &pt3[VA_PART3(va)];
                 }
@@ -56,7 +57,7 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
 
 void init_pgdir(struct pgdir* pgdir)
 {
-    pgdir->pt = NULL;
+    pgdir->pt = kalloc_page();
     init_spinlock(&pgdir->lock);
     init_sections(&pgdir->section_head);
     pgdir->online = false;
@@ -99,13 +100,19 @@ void free_pgdir(struct pgdir* pgdir)
 void attach_pgdir(struct pgdir* pgdir)
 {
     extern PTEntries invalid_pt;
-    thisproc()->pgdir.online = false;
+    auto thispd = &thisproc()->pgdir;
+    _acquire_spinlock(&thispd->lock);
+    thispd->online = false;
+    _release_spinlock(&thispd->lock);
     if (pgdir->pt){
         arch_set_ttbr0(K2P(pgdir->pt));
+        _acquire_spinlock(&pgdir->lock);
         pgdir->online = true;
+        _release_spinlock(&pgdir->lock);
     }else{
         arch_set_ttbr0(K2P(&invalid_pt));
     }
+    arch_tlbi_vmalle1is();
 }
 
 

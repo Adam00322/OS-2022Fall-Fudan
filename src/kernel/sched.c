@@ -37,6 +37,7 @@ define_init(sched)
         p->schinfo.prio = 39;
         p->schinfo.weight = prio_to_weight[39];
         p->container = &root_container;
+        p->pgdir.pt = (PTEntriesPtr)arch_get_ttbr0();
     }
 }
 

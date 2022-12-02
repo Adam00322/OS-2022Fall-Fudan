@@ -3,11 +3,12 @@
 #include <common/defines.h>
 #include <aarch64/mmu.h>
 #include <common/rc.h>
+#include <common/ipc.h>
 
 #define REVERSED_PAGES 1024 //Reversed pages
 
 struct page{
-	int ref;
+	u8 ref;
 	SpinLock lock;
 };
 

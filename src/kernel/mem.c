@@ -21,8 +21,6 @@ define_early_init(pages)
 	   add_to_queue(&pages, (QueueNode*)p); 
         _increment_rc(&alloc_page_cnt);
     }
-    fetch_from_queue(&pages);
-    _decrement_rc(&alloc_page_cnt);
 }
 
 static void* zero_page;
@@ -47,11 +45,12 @@ void* kalloc_page()
 
 void kfree_page(void* p)
 {
-    _increment_rc(&alloc_page_cnt);
+    if(p == zero_page) return;
     auto page = page_ref[K2P(p) / PAGE_SIZE];
     _acquire_spinlock(&page.lock);
     page.ref--;
     if(page.ref == 0){
+        _increment_rc(&alloc_page_cnt);
         add_to_queue(&pages, (QueueNode*)p);
     }
     _release_spinlock(&page.lock);
@@ -95,17 +94,29 @@ void* get_zero_page(){
     return zero_page;
 }
 
+bool check_zero_page(){
+    for(int i = 0; i < PAGE_SIZE / 64; i++){
+        if(((u64*)zero_page)[i] != 0) return false;
+    }
+    return true;
+}
+
 u32 write_page_to_disk(void* ka){
     u32 bno = find_and_set_8_blocks();
     for(u32 i = 0; i < 8; i++){
-        block_device.write(bno + i, ka + i * BLOCK_SIZE);
+        Block* b = bcache.acquire(bno + i);
+        memcpy(b->data, ka + i * BLOCK_SIZE, BLOCK_SIZE);
+        bcache.sync(NULL, b);
+        bcache.release(b);
     }
     return bno;
 }
 
 void read_page_from_disk(void* ka, u32 bno){
     for(u32 i = 0; i < 8; i++){
-        block_device.read(bno + i, ka + i * BLOCK_SIZE);
+        Block* b = bcache.acquire(bno + i);
+        memcpy(ka + i * BLOCK_SIZE, b->data, BLOCK_SIZE);
+        bcache.release(b);
     }
     release_8_blocks(bno);
 }

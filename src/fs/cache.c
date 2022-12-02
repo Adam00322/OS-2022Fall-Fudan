@@ -11,6 +11,8 @@ static const BlockDevice* device;
 static SpinLock lock;     // protects block cache.
 static ListNode head;     // the list of all allocated in-memory block.
 static LogHeader header;  // in-memory copy of log header block.
+static Bitmap(swap_bitmap, SWAP_SIZE);
+static SpinLock swap_lock;
 
 // hint: you may need some other variables. Just add them here.
 struct LOG {
@@ -158,6 +160,9 @@ void init_bcache(const SuperBlock* _sblock, const BlockDevice* _device) {
 
     read_header();
     log_wb();
+
+    memset(swap_bitmap, 0, sizeof(swap_bitmap));
+    init_spinlock(&swap_lock);
 }
 
 // see `cache.h`.
@@ -167,7 +172,7 @@ static void cache_begin_op(OpContext* ctx) {
     while(log.log_used + OP_MAX_NUM_BLOCKS > log.log_size || log.committing){
         _lock_sem(&log.begin);
         _release_spinlock(&log.lock);
-        _wait_sem(&log.begin, false);
+        ASSERT(_wait_sem(&log.begin, false));
         _acquire_spinlock(&log.lock);
     }
     ctx->rm = OP_MAX_NUM_BLOCKS;
@@ -230,7 +235,7 @@ static void cache_end_op(OpContext* ctx) {
         post_all_sem(&log.begin);
         _lock_sem(&log.end);
         _release_spinlock(&log.lock);
-        _wait_sem(&log.end, false);
+        ASSERT(_wait_sem(&log.end, false));
     }
 }
 
@@ -238,10 +243,10 @@ static void cache_end_op(OpContext* ctx) {
 // hint: you can use `cache_acquire`/`cache_sync` to read/write blocks.
 static usize cache_alloc(OpContext* ctx) {
     // TODO
-    for(u32 i = 0; i < MIN(sblock->num_blocks, SWAP_START); i += BIT_PER_BLOCK){
+    for(u32 i = 0; i < SWAP_START; i += BIT_PER_BLOCK){
         Block* b = cache_acquire(sblock->bitmap_start + i / BIT_PER_BLOCK);
-        BitmapCell* bm = b->data;
-        for(u32 j = 0; j < BIT_PER_BLOCK && i + j < MIN(sblock->num_blocks, SWAP_START); j++){
+        BitmapCell* bm = (BitmapCell*)b->data;
+        for(u32 j = 0; j < BIT_PER_BLOCK && i + j < SWAP_START; j++){
             if(!bitmap_get(bm, j)){
                 bitmap_set(bm, j);
                 cache_sync(ctx, b);
@@ -263,20 +268,13 @@ static usize cache_alloc(OpContext* ctx) {
 static void cache_free(OpContext* ctx, usize block_no) {
     // TODO
     Block* b = cache_acquire(sblock->bitmap_start + block_no / BIT_PER_BLOCK);
-    BitmapCell* bm = b->data;
+    BitmapCell* bm = (BitmapCell*)b->data;
     bitmap_clear(bm, block_no % BIT_PER_BLOCK);
     cache_sync(ctx, b);
     cache_release(b);
 }
 
 //swap
-static Bitmap(swap_bitmap, SWAP_SIZE);
-static SpinLock swap_lock;
-define_init(init_swap){
-    init_bitmap(swap_bitmap, SWAP_SIZE);
-    init_spinlock(&swap_lock);
-}
-
 void release_8_blocks(u32 bno){
     _acquire_spinlock(&swap_lock);
     bitmap_clear(swap_bitmap, (bno - SWAP_START) / 8);
