@@ -15,8 +15,6 @@
 
 define_rest_init(paging){
 	//TODO init
-	thisproc()->pgdir.pt = kalloc_page();
-	memset(thisproc()->pgdir.pt, 0, PAGE_SIZE);
 	init_block_device();
 	init_bcache(get_super_block(), &block_device);
 }
@@ -112,7 +110,6 @@ void swapin(struct pgdir* pd, struct section* st){
 		auto pte = get_pte(pd, va, false);
 		if(pte != NULL && *pte != NULL){
 			void* ka = alloc_page_for_user();
-			// printk("%lld\n",(*pte) >> 12);
 			read_page_from_disk(ka, (*pte) >> 12);
 			vmmap(pd, va, ka, PTE_USER_DATA);
 		}

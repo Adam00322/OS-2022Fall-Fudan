@@ -58,6 +58,7 @@ PTEntriesPtr get_pte(struct pgdir* pgdir, u64 va, bool alloc)
 void init_pgdir(struct pgdir* pgdir)
 {
     pgdir->pt = kalloc_page();
+    memset(pgdir->pt, 0, PAGE_SIZE);
     init_spinlock(&pgdir->lock);
     init_sections(&pgdir->section_head);
     pgdir->online = false;
