@@ -68,6 +68,7 @@ void vmmap(struct pgdir* pd, u64 va, void* ka, u64 flags)
 {
     PTEntriesPtr pt = get_pte(pd, va, true);
     *pt = K2P((u64)ka|flags);
+    increment_ref(ka);
 }
 
 void free_pgdir(struct pgdir* pgdir)
