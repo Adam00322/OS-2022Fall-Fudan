@@ -1,6 +1,8 @@
 
 #include <driver/sddef.h>
-
+static Queue bufQueue;
+static SpinLock sdlock;
+static u32 LBA, Nsectors;
 /*
  * Initialize SD card.
  * Returns zero if initialization was successful, non-zero otherwise.
@@ -56,6 +58,20 @@ void sd_init() {
      * 4.don't forget to call this function somewhere
      * TODO: Lab5 driver.
      */
+    sdInit();
+    init_spinlock(&sdlock);
+    queue_init(&bufQueue);
+    set_interrupt_handler(IRQ_SDIO, sd_intr);
+    set_interrupt_handler(IRQ_ARASANSDIO, sd_intr);
+    buf b;
+    b.blockno = 0;
+    b.flags = 0;
+    sdrw(&b);
+    u32* p = (u32*)&(b.data[462]);
+    LBA = p[2];
+    Nsectors = p[3];
+    printk("LBA:%d\n",LBA);
+    printk("Nsectors:%d\n",Nsectors);
 }
 
 /* Start the request for b. Caller must hold sdlock. */
@@ -136,6 +152,37 @@ void sd_intr() {
      *
      * TODO: Lab5 driver.
      */
+    buf* b = bufqueue_front(&bufQueue);
+    arch_dsb_sy();
+    if(b->flags & B_DIRTY){
+        if(sdWaitForInterrupt(INT_DATA_DONE)){
+            PANIC();
+        }
+    }else{
+        if(sdWaitForInterrupt(INT_READ_RDY)){
+            PANIC();
+        }
+        int done = 0;
+        u32* intbuf = (u32*)b->data;
+        arch_dsb_sy();
+        while (done < 128)
+            intbuf[done++] = get_EMMC_DATA();
+        arch_dsb_sy();
+        if(sdWaitForInterrupt(INT_DATA_DONE)){
+            PANIC();
+        }
+    }
+    b->flags = B_VALID;
+    arch_dsb_sy();
+    _acquire_spinlock(&sdlock);
+    bufqueue_pop(&bufQueue);
+    post_sem(&b->bufsem);
+    arch_dsb_sy();
+    if(!bufqueue_empty(&bufQueue)){
+        sd_start(bufqueue_front(&bufQueue));
+    }
+    _release_spinlock(&sdlock);
+    arch_dsb_sy();
 }
 
 void sdrw(buf* b) {
@@ -148,6 +195,19 @@ void sdrw(buf* b) {
      * sd_start(), wait_sem() to complete this function.
      *  TODO: Lab5 driver.
      */
+    arch_dsb_sy();
+    init_sem(&b->bufsem, 0);
+    _acquire_spinlock(&sdlock);
+    if(bufqueue_push(&bufQueue, b) == 1){
+        sd_start(b);
+    }
+    _release_spinlock(&sdlock);
+    arch_dsb_sy();
+    while(1){
+        if(!wait_sem(&b->bufsem)) break;
+        if(b->flags == B_VALID) break;
+    }
+    arch_dsb_sy();
 }
 
 /* SD card test and benchmark. */

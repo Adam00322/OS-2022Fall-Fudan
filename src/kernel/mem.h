@@ -3,11 +3,13 @@
 #include <common/defines.h>
 #include <aarch64/mmu.h>
 #include <common/rc.h>
+#include <common/ipc.h>
 
 #define REVERSED_PAGES 1024 //Reversed pages
 
 struct page{
-	RefCount ref;
+	i8 ref;
+	SpinLock lock;
 };
 
 WARN_RESULT void* kalloc_page();
@@ -21,3 +23,4 @@ WARN_RESULT void* get_zero_page();
 bool check_zero_page();
 u32 write_page_to_disk(void* ka);
 void read_page_from_disk(void* ka, u32 bno);
+void increment_ref(void* ka);
