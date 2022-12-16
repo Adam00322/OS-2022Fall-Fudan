@@ -169,7 +169,7 @@ static Inode* inode_share(Inode* inode) {
 static void inode_put(OpContext* ctx, Inode* inode) {
     // TODO
     _acquire_spinlock(&lock);
-    if(inode->rc.count == 1 && inode->entry.num_links == 0){
+    if(inode->rc.count == 1 && inode->entry.num_links == 0 && inode->valid){
         _detach_from_list(&inode->node);
         inode_lock(inode);
         _release_spinlock(&lock);
