@@ -179,6 +179,7 @@ static void inode_put(OpContext* ctx, Inode* inode) {
         inode->valid = false;
         inode_unlock(inode);
         kfree(inode);
+        return;
     }
     _decrement_rc(&inode->rc);
     _release_spinlock(&lock);
