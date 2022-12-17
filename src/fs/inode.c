@@ -241,7 +241,7 @@ static usize inode_read(Inode* inode, u8* dest, usize offset, usize count) {
     // TODO
     if(count == 0) return count;
     count = 0;
-    for(usize i = offset/BLOCK_SIZE; i <= end/BLOCK_SIZE; i++){
+    for(usize i = offset/BLOCK_SIZE; i <= (end-1)/BLOCK_SIZE; i++){
         usize n = MIN(end - offset, (i + 1) * BLOCK_SIZE - offset);
         bool modified;
         auto block_no = inode_map(NULL, inode, i, &modified);
@@ -268,7 +268,7 @@ static usize inode_write(OpContext* ctx,
 
     // TODO
     count = 0;
-    for(usize i = offset/BLOCK_SIZE; i <= end/BLOCK_SIZE; i++){
+    for(usize i = offset/BLOCK_SIZE; i <= (end-1)/BLOCK_SIZE; i++){
         usize n = MIN(end - offset, (i + 1) * BLOCK_SIZE - offset);
         bool modified;
         auto block_no = inode_map(ctx, inode, i, &modified);
