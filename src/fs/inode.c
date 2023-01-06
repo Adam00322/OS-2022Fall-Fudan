@@ -112,6 +112,8 @@ static Inode* inode_get(usize inode_no) {
         if(inode->inode_no == inode_no){
             _increment_rc(&inode->rc);
             _release_spinlock(&lock);
+            inode_lock(inode);
+            inode_unlock(inode);
             return inode;
         }
     }
