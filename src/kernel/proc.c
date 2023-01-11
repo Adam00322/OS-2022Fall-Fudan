@@ -5,6 +5,7 @@
 #include <common/list.h>
 #include <common/string.h>
 #include <kernel/printk.h>
+#include <kernel/paging.h>
 
 struct proc root_proc;
 extern struct container root_container;
@@ -288,4 +289,27 @@ define_init(root_proc)
 void trap_return();
 int fork() {
     /* TODO: Your code here. */
+    auto np = create_proc();
+    auto p = thisproc();
+
+    copy_sections(&p->pgdir.section_head, &np->pgdir.section_head);
+    PTEntriesPtr pte;
+    u64 va = 0;
+    while((pte = get_pte(&p->pgdir, va, false)) != NULL && (*pte & PTE_VALID)){
+        vmmap(&np->pgdir, va, P2K(PTE_ADDRESS(*pte)), PTE_FLAGS(*pte) | PTE_RO);
+        va += PAGE_SIZE;
+    }
+
+    *np->ucontext = *p->ucontext;
+    np->ucontext->x[0] = 0;
+
+    for(int i=0; i<NOFILE; i++){
+        if(p->oftable.fp[i])
+            np->oftable.fp[i] = filedup(p->oftable.fp[i]);
+    }
+    np->cwd = inodes.share(p->cwd);
+
+    set_parent_to_this(np);
+    start_proc(np, trap_return, 0);
+    return np->pid;
 }

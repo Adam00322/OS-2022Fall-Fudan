@@ -60,7 +60,7 @@ void init_pgdir(struct pgdir* pgdir)
     pgdir->pt = kalloc_page();
     memset(pgdir->pt, 0, PAGE_SIZE);
     init_spinlock(&pgdir->lock);
-    init_sections(&pgdir->section_head);
+    //init_sections(&pgdir->section_head);
     pgdir->online = false;
 }
 
@@ -106,7 +106,7 @@ void attach_pgdir(struct pgdir* pgdir)
     _acquire_spinlock(&thispd->lock);
     thispd->online = false;
     _release_spinlock(&thispd->lock);
-    if (pgdir->pt){
+    if(pgdir->pt){
         arch_set_ttbr0(K2P(pgdir->pt));
         _acquire_spinlock(&pgdir->lock);
         pgdir->online = true;
@@ -124,5 +124,24 @@ void attach_pgdir(struct pgdir* pgdir)
  */
 int copyout(struct pgdir* pd, void* va, void *p, usize len){
     // TODO
+    if(len == 0) return 0;
+    u64 offset = (u64)va;
+    u64 end = offset+len;
+    for(u64 i = offset/PAGE_SIZE; i <= (end-1)/PAGE_SIZE; i++){
+        u64 n = MIN(end - offset, (i + 1) * PAGE_SIZE - offset);
+        auto pte = get_pte(pd, offset, true);
+        if((*pte & PTE_VALID) == 0){
+            void* ka = alloc_page_for_user();
+            vmmap(pd, offset, ka, PTE_USER_DATA);
+        }
+        memcpy(P2K(PTE_ADDRESS(*pte))+offset-PAGE_BASE(offset), p, n);
+        offset += n;
+        p += n;
+    }
+    return 0;
+    // struct pgdir* prepd = P2K(arch_get_ttbr0());
+    // attach_pgdir(pd);
+    // memcpy(va, p, len);
+    // attach_pgdir(prepd);
 }
 

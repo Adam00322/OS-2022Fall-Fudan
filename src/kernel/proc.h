@@ -9,8 +9,6 @@
 #include <kernel/container.h>
 #include <fs/inode.h>
 #include <fs/file.h>
-
-#define NOFILE 1024 /* open files per process */
 #include <common/bitmap.h>
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, DEEPSLEEPING, ZOMBIE };
@@ -18,7 +16,9 @@ enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, DEEPSLEEPING, ZOMBIE };
 typedef struct UserContext
 {
     // TODO: customize your trap frame
-    u64 spsr, elr, sp_el0, ttbr0;
+    u64 q0[2];
+    u64 spsr, elr;
+    u64 sp_el0, tpidr0;
     u64 x[32];//x0-x31
 } UserContext;
 

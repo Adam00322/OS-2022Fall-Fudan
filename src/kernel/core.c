@@ -30,10 +30,13 @@ NO_RETURN void kernel_entry() {
     // sd_test();
     
     do_rest_init();
-    pgfault_first_test();
-    pgfault_second_test();
+    // pgfault_first_test();
+    // pgfault_second_test();
 
     // TODO: map init.S to user space and trap_return to run icode
+    if(fork() != 0){
+        
+    }
 }
 
 NO_INLINE NO_RETURN void _panic(const char* file, int line) {

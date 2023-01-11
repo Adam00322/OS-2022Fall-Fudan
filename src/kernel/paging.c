@@ -19,9 +19,19 @@ define_rest_init(paging){
 	init_bcache(get_super_block(), &block_device);
 }
 
+static struct section* init_heap(ListNode* section_head, u64 begin){
+	struct section* s = kalloc(sizeof(struct section));
+	s->flags = ST_HEAP;
+	init_sleeplock(&s->sleeplock);
+	s->end = s->begin = begin;
+	_insert_into_list(section_head, &s->stnode);
+	return s;
+}
+
 u64 sbrk(i64 size){
 	//TODO
 	auto pd = &thisproc()->pgdir;
+	u64 begin = 0;
 	_for_in_list(p, &pd->section_head){
 		if(p == &pd->section_head) continue;
 		auto section = container_of(p, struct section, stnode);
@@ -48,8 +58,10 @@ u64 sbrk(i64 size){
 			}
 			return end;
 		}
+		begin = MAX(begin, section->end);
 	}
-	PANIC();
+	if(size < 0) PANIC();
+	init_heap(&pd->section_head, PAGE_BASE(begin) + 5 * PAGE_SIZE)->end += size*PAGE_SIZE;
 }	
 
 
@@ -132,12 +144,22 @@ int pgfault(u64 iss){
 			break;
 	}
 	ASSERT(st);
+	ASSERT(addr >= st->begin && addr < st->end);
 	auto pte = get_pte(pd, addr, true);
 	if((*pte & PTE_VALID) == 0){
-		if(st->flags & ST_SWAP)
-			swapin(pd, st);
-		if(*pte == NULL)
-			vmmap(pd, addr, alloc_page_for_user(), PTE_USER_DATA);
+		if(st->flags & ST_FILE){
+			auto inode = st->fp->ip;
+			auto ka = alloc_page_for_user();
+			inodes.read(inode, ka, st->offset+PAGE_BASE(addr)-st->begin, PAGE_SIZE);
+			u64 flags = PTE_USER_DATA;
+			if(st->flags & ST_RO) flags |= PTE_RO;
+			vmmap(pd, addr, ka, flags);
+		}else{
+			if(st->flags & ST_SWAP)
+				swapin(pd, st);
+			if(*pte == NULL)
+				vmmap(pd, addr, alloc_page_for_user(), PTE_USER_DATA);
+		}
 	}else if((*pte) & PTE_RO){
 		auto ka = alloc_page_for_user();
 		memcpy(ka, (void*)P2K(PTE_ADDRESS(*pte)), PAGE_SIZE);
@@ -151,13 +173,11 @@ int pgfault(u64 iss){
 }
 
 void init_sections(ListNode* section_head){
-	struct section* s = kalloc(sizeof(struct section));
-	s->flags = ST_HEAP;
-	init_sleeplock(&s->sleeplock);
-	// s->begin = 0xc0000000;
-	// s->end = 0xc0000000;
-	s->end = s->begin = 0x0;
-	_insert_into_list(section_head, &s->stnode);
+	// struct section* s = kalloc(sizeof(struct section));
+	// s->flags = ST_HEAP;
+	// init_sleeplock(&s->sleeplock);
+	// s->end = s->begin = 0x0;
+	// _insert_into_list(section_head, &s->stnode);
 }
 
 void free_sections(struct pgdir* pd){
@@ -179,4 +199,13 @@ void free_sections(struct pgdir* pd){
 		pre = p;
 	}
 	if(pre != NULL) kfree(pre);
+}
+
+void copy_sections(ListNode* from_head, ListNode* to_head){
+	_for_in_list(p, from_head){
+		if(p == from_head) continue;
+		struct section* s = kalloc(sizeof(struct section));
+		*s = *container_of(p, struct section, stnode);
+		_insert_into_list(to_head, &s->stnode);
+	}
 }
