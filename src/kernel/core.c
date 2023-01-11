@@ -21,6 +21,8 @@ NO_RETURN void idle_entry() {
     arch_stop_cpu();
 }
 
+extern void icode();
+extern NO_RETURN void trap_return();
 NO_RETURN void kernel_entry() {
     printk("hello world %d\n", (int)sizeof(struct proc));
 
@@ -34,9 +36,8 @@ NO_RETURN void kernel_entry() {
     // pgfault_second_test();
 
     // TODO: map init.S to user space and trap_return to run icode
-    if(fork() != 0){
-        
-    }
+    thisproc()->ucontext->elr = (u64)icode;
+    trap_return();
 }
 
 NO_INLINE NO_RETURN void _panic(const char* file, int line) {

@@ -65,10 +65,20 @@ define_syscall(ioctl, int fd, u64 request) {
  */
 define_syscall(mmap, void* addr, int length, int prot, int flags, int fd, int offset) {
     // TODO
+    addr = addr;
+    length = length;
+    prot = prot;
+    flags = flags;
+    fd =fd;
+    offset = offset;
+    return 0;
 }
 
-define_syscall(munmap, void *addr, size_t length) {
+define_syscall(munmap, void *addr, int length) {
     // TODO
+    addr = addr;
+    length = length;
+    return 0;
 }
 
 /*
@@ -78,11 +88,11 @@ define_syscall(dup, int fd) {
     struct file* f = fd2file(fd);
     if (!f)
         return -1;
-    int fd = fdalloc(f);
-    if (fd < 0)
+    int nfd = fdalloc(f);
+    if (nfd < 0)
         return -1;
     filedup(f);
-    return fd;
+    return nfd;
 }
 
 /*
@@ -349,5 +359,6 @@ define_syscall(pipe2, int *fd, int flags) {
     }
     fd[0] = fdalloc(f0);
     fd[1] = fdalloc(f1);
+    flags = flags;
     return 0;
 }

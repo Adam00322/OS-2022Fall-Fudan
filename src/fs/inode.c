@@ -4,6 +4,7 @@
 #include <kernel/printk.h>
 #include <sys/stat.h>
 #include <kernel/sched.h>
+#include <kernel/console.h>
 
 // this lock mainly prevents concurrent access to inode list `head`, reference
 // count increment and decrement.

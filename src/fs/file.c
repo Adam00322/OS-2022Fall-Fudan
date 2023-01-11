@@ -76,7 +76,7 @@ int filestat(struct file* f, struct stat* st) {
     if(f->type == FD_INODE){
         inodes.lock(f->ip);
         stati(f->ip, st);
-        inodes.unlock(f->type);
+        inodes.unlock(f->ip);
         return 0;
     }
     return -1;
@@ -92,7 +92,7 @@ isize fileread(struct file* f, char* addr, isize n) {
         inodes.unlock(f->ip);
         return n;
     }else if(f->type == FD_PIPE && f->readable){
-        return pipeRead(f->pipe, addr, n);
+        return pipeRead(f->pipe, (u64)addr, n);
     }
     return -1;
 }
@@ -102,7 +102,7 @@ isize filewrite(struct file* f, char* addr, isize n) {
     /* TODO: Lab10 Shell */
     if(f->type == FD_INODE && f->writable){
         usize mx = (OP_MAX_NUM_BLOCKS-1-1-2) / 2 * BLOCK_SIZE;
-        usize t = 0;
+        isize t = 0;
         while(t < n){
             t = MIN(mx, (usize)n-t);
             OpContext ctx;
@@ -115,7 +115,7 @@ isize filewrite(struct file* f, char* addr, isize n) {
         }
         return t;
     }else if(f->type == FD_PIPE && f->writable){
-        return pipeWrite(f->pipe, addr, n);
+        return pipeWrite(f->pipe, (u64)addr, n);
     }
     return -1;
 }

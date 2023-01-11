@@ -50,7 +50,7 @@ void pipeClose(Pipe* pi, int writable) {
 
 int pipeWrite(Pipe* pi, u64 addr, int n) {
     // TODO
-    char* src = addr;
+    char* src = (char*)addr;
     int i = 0;
     _acquire_spinlock(&pi->lock);
     while(i < n){
@@ -75,7 +75,7 @@ int pipeWrite(Pipe* pi, u64 addr, int n) {
 
 int pipeRead(Pipe* pi, u64 addr, int n) {
     // TODO
-    char* dst = addr;
+    char* dst = (char*)addr;
     int i = 0;
     _acquire_spinlock(&pi->lock);
     while(i < n){

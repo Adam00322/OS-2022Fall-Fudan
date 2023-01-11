@@ -296,7 +296,7 @@ int fork() {
     PTEntriesPtr pte;
     u64 va = 0;
     while((pte = get_pte(&p->pgdir, va, false)) != NULL && (*pte & PTE_VALID)){
-        vmmap(&np->pgdir, va, P2K(PTE_ADDRESS(*pte)), PTE_FLAGS(*pte) | PTE_RO);
+        vmmap(&np->pgdir, va, (void*)P2K(PTE_ADDRESS(*pte)), PTE_FLAGS(*pte) | PTE_RO);
         va += PAGE_SIZE;
     }
 

@@ -28,15 +28,14 @@ static int error(OpContext* ctx, Inode* inode, struct pgdir* pd){
 }
 
 static int load(struct pgdir* pd, Inode* inode, usize offset, u64 va, usize len){
-	u64 end = va + len;
 	void* ka;
 	for(usize i = 0; i <= len;){
 		auto pte = get_pte(pd, va+i, true);
 		if((*pte & PTE_VALID) == 0){
             vmmap(pd, offset, alloc_page_for_user(), PTE_USER_DATA);
         }
-		ka = P2K(PTE_ADDRESS(*pte));
-		usize n = inodes.read(inode, ka, offset + i, MIN(PAGE_SIZE, len-i));
+		ka = (void*)P2K(PTE_ADDRESS(*pte));
+		usize n = inodes.read(inode, ka, offset + i, MIN((usize)PAGE_SIZE, len-i));
 		if(n != PAGE_SIZE){
 			if(n != len-i)
 				return -1;
@@ -48,6 +47,7 @@ static int load(struct pgdir* pd, Inode* inode, usize offset, u64 va, usize len)
 
 int execve(const char *path, char *const argv[], char *const envp[]) {
 	// TODO
+	envp = envp;
 	auto p = thisproc();
 	u64 sp = 0;
 	OpContext ctx;
@@ -61,7 +61,7 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 	Elf64_Ehdr elf;
 	if(inodes.read(inode, (u8*)&elf, 0, sizeof(Elf64_Ehdr)) != sizeof(Elf64_Ehdr))
 		return error(&ctx, inode, NULL);
-	if(strncmp(elf.e_ident, ELFMAG, 4) != 0)
+	if(strncmp((char*)elf.e_ident, ELFMAG, 4) != 0)
 		return error(&ctx, inode, NULL);
 	
 	// Step2
@@ -107,11 +107,11 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 	inodes.put(&ctx, inode);
 	bcache.end_op(&ctx);
 	// Step3
-	u64 sp = PAGE_BASE(sp+PAGE_SIZE-1);
-	vmmap(&pd, sp, alloc_page_for_user(), PTE_USER_DATA);
-	sp += PAGE_SIZE;
-	vmmap(&pd, sp, alloc_page_for_user(), PTE_USER_DATA);
-	sp += PAGE_SIZE;
+	sp = PAGE_BASE(sp+PAGE_SIZE-1);
+	for(int i=0; i<5; i++){
+		vmmap(&pd, sp, alloc_page_for_user(), PTE_USER_DATA);
+		sp += PAGE_SIZE;
+	}
 
 	int argc;
 	for(argc = 0; argv[argc]; argc++){
@@ -119,16 +119,15 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 		sp -= strlen(argv[argc]) + 1;
 	}
 	sp -= 1;
-	sp -= sizeof(void*) + sizeof(int);
-	copyout(&pd, sp, &argc, sizeof(int));
-	copyout(&pd, sp + sizeof(int), &argv, sizeof(void*));
-	for(u64 i = sp + sizeof(int) + sizeof(void*), j = 0; j<=argc; j++){
-		copyout(&pd, i, argv[j], strlen(argv[j]) + 1);
+	sp -= sp%4 + sizeof(int);
+	copyout(&pd, (void*)sp, &argc, sizeof(int));
+	for(u64 i = sp + sizeof(int) + sizeof(void*), j = 0; j<=(u64)argc; j++){
+		copyout(&pd, (void*)i, argv[j], strlen(argv[j]) + 1);
 		i += strlen(argv[j]) + 1;
 	}
 	p->ucontext->sp_el0 = sp;
 	p->ucontext->x[0] = argc;
-	p->ucontext->x[1] = argv;
+	p->ucontext->x[1] = (u64)argv;
 	p->ucontext->elr = elf.e_entry;
 	// Final
 	free_pgdir(&p->pgdir);

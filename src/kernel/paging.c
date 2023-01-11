@@ -13,11 +13,11 @@
 #include <kernel/printk.h>
 #include <kernel/init.h>
 
-define_rest_init(paging){
-	//TODO init
-	init_block_device();
-	init_bcache(get_super_block(), &block_device);
-}
+// define_rest_init(paging){
+// 	//TODO init
+// 	init_block_device();
+// 	init_bcache(get_super_block(), &block_device);
+// }
 
 static struct section* init_heap(ListNode* section_head, u64 begin){
 	struct section* s = kalloc(sizeof(struct section));
@@ -61,7 +61,9 @@ u64 sbrk(i64 size){
 		begin = MAX(begin, section->end);
 	}
 	if(size < 0) PANIC();
-	init_heap(&pd->section_head, PAGE_BASE(begin) + 5 * PAGE_SIZE)->end += size*PAGE_SIZE;
+	auto s = init_heap(&pd->section_head, PAGE_BASE(begin) + 5 * PAGE_SIZE);
+	s->end += size*PAGE_SIZE;
+	return s->end;
 }	
 
 
@@ -173,6 +175,7 @@ int pgfault(u64 iss){
 }
 
 void init_sections(ListNode* section_head){
+	init_list_node(section_head);
 	// struct section* s = kalloc(sizeof(struct section));
 	// s->flags = ST_HEAP;
 	// init_sleeplock(&s->sleeplock);

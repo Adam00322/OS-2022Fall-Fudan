@@ -60,7 +60,7 @@ void init_pgdir(struct pgdir* pgdir)
     pgdir->pt = kalloc_page();
     memset(pgdir->pt, 0, PAGE_SIZE);
     init_spinlock(&pgdir->lock);
-    //init_sections(&pgdir->section_head);
+    init_sections(&pgdir->section_head);
     pgdir->online = false;
 }
 
@@ -134,7 +134,7 @@ int copyout(struct pgdir* pd, void* va, void *p, usize len){
             void* ka = alloc_page_for_user();
             vmmap(pd, offset, ka, PTE_USER_DATA);
         }
-        memcpy(P2K(PTE_ADDRESS(*pte))+offset-PAGE_BASE(offset), p, n);
+        memcpy((void*)P2K(PTE_ADDRESS(*pte))+offset-PAGE_BASE(offset), p, n);
         offset += n;
         p += n;
     }
