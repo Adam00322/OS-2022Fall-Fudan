@@ -139,14 +139,15 @@ int pgfault(u64 iss){
 	u64 addr = arch_get_far();
 	//TODO
 	struct section* st = NULL;
-	_for_in_list(p, &pd->section_head){
-		if(p == &pd->section_head) continue;
-		st = container_of(p, struct section, stnode);
-		if(addr >= st->begin && addr < st->end)
+	_for_in_list(np, &pd->section_head){
+		if(np == &pd->section_head) continue;
+		auto s = container_of(np, struct section, stnode);
+		if(addr >= s->begin && addr < s->end){
+			st = s;
 			break;
+		}
 	}
 	ASSERT(st);
-	ASSERT(addr >= st->begin && addr < st->end);
 	auto pte = get_pte(pd, addr, true);
 	if((*pte & PTE_VALID) == 0){
 		if(st->flags & ST_FILE){
@@ -205,6 +206,7 @@ void free_sections(struct pgdir* pd){
 }
 
 void copy_sections(ListNode* from_head, ListNode* to_head){
+	init_list_node(to_head);
 	_for_in_list(p, from_head){
 		if(p == from_head) continue;
 		struct section* s = kalloc(sizeof(struct section));

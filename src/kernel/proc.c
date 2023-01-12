@@ -275,10 +275,18 @@ struct proc* get_offline_proc(){
     return proc;
 }
 
+extern void icode();
+extern void eicode();
 define_init(root_proc)
 {
     init_proc(&root_proc);
     root_proc.parent = &root_proc;
+    struct section* s = kalloc(sizeof(struct section));
+    s->flags = ST_TEXT;
+    s->length = (u64)eicode - PAGE_BASE((u64)icode);
+    s->begin = 0x0;
+    s->end = s->begin + s->length;
+    _insert_into_list(&root_proc.pgdir.section_head, &s->stnode);
     start_proc(&root_proc, kernel_entry, 123456);
 }
 
