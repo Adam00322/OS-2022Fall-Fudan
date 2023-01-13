@@ -55,6 +55,7 @@ isize console_read(Inode *ip, char *dst, isize n) {
             _acquire_spinlock(&input.lock);
         }
         dst[i++] = input.buf[input.r++ % INPUT_BUF];
+        if(dst[i-1] == '\n') break;
     }
     _release_spinlock(&input.lock);
     inodes.lock(ip);
@@ -65,17 +66,21 @@ void console_intr() {
     // TODO
     char c;
     _acquire_spinlock(&input.lock);
-    while(uart_valid_char(c = uart_get_char())){
+    while((c = uart_get_char()) != 0xff){
         switch(c){
+            case 127:
             case '\b':
-                input.e--;
-                uart_put_char('\b');
-                uart_put_char(' ');
-                uart_put_char('\b');
-                break;
+                if(input.e != input.w){
+                    input.e--;
+                    uart_put_char('\b');
+                    uart_put_char(' ');
+                    uart_put_char('\b');
+                    break;
+                }
 
             case C('U'):
-                while(input.e-- != input.w){
+                while(input.e != input.w){
+                    input.e--;
                     uart_put_char('\b');
                     uart_put_char(' ');
                     uart_put_char('\b');
@@ -88,6 +93,7 @@ void console_intr() {
 
             default:
                 if(input.r + INPUT_BUF != input.e){
+                    if(c == '\r') c = '\n';
                     input.buf[input.e++ % INPUT_BUF] = c;
                     uart_put_char(c);
                     if(c == '\n' || c == C('D')){

@@ -45,10 +45,10 @@ static struct file* fd2file(int fd) {
  */
 int fdalloc(struct file* f) {
     /* TODO: Lab10 Shell */
-    auto oftable = thisproc()->oftable;
-    for(int i=0; i<NOFILE; i++){
-        if(oftable.fp[i] == NULL){
-            oftable.fp[i] = f;
+    auto oftable = &thisproc()->oftable;
+    for(int i=0; i<NFILE; i++){
+        if(oftable->fp[i] == NULL){
+            oftable->fp[i] = f;
             return i;
         }
     }
@@ -178,20 +178,6 @@ define_syscall(newfstatat, int dirfd, const char* path, struct stat* st, int fla
     bcache.end_op(&ctx);
 
     return 0;
-}
-
-// Is the directory dp empty except for "." and ".." ?
-static int isdirempty(Inode* dp) {
-    usize off;
-    DirEntry de;
-
-    for (off = 2 * sizeof(de); off < dp->entry.num_bytes; off += sizeof(de)) {
-        if (inodes.read(dp, (u8*)&de, off, sizeof(de)) != sizeof(de))
-            PANIC();
-        if (de.inode_no != 0)
-            return 0;
-    }
-    return 1;
 }
 
 // Is the directory dp empty except for "." and ".." ?

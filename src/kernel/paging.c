@@ -150,19 +150,18 @@ int pgfault(u64 iss){
 	ASSERT(st);
 	auto pte = get_pte(pd, addr, true);
 	if((*pte & PTE_VALID) == 0){
-		if(st->flags & ST_FILE){
-			auto inode = st->fp->ip;
-			auto ka = alloc_page_for_user();
-			inodes.read(inode, ka, st->offset+PAGE_BASE(addr)-st->begin, PAGE_SIZE);
-			u64 flags = PTE_USER_DATA;
-			if(st->flags & ST_RO) flags |= PTE_RO;
-			vmmap(pd, addr, ka, flags);
-		}else{
-			if(st->flags & ST_SWAP)
-				swapin(pd, st);
-			if(*pte == NULL)
-				vmmap(pd, addr, alloc_page_for_user(), PTE_USER_DATA);
-		}
+		// if(st->flags & ST_FILE){
+		// 	auto inode = st->fp->ip;
+		// 	auto ka = alloc_page_for_user();
+		// 	inodes.read(inode, ka, st->offset+PAGE_BASE(addr)-st->begin, PAGE_SIZE);
+		// 	u64 flags = PTE_USER_DATA;
+		// 	if(st->flags & ST_RO) flags |= PTE_RO;
+		// 	vmmap(pd, addr, ka, flags);
+		// }else{
+		if(st->flags & ST_SWAP)
+			swapin(pd, st);
+		if(*pte == NULL)
+			vmmap(pd, addr, alloc_page_for_user(), PTE_USER_DATA);
 	}else if((*pte) & PTE_RO){
 		auto ka = alloc_page_for_user();
 		memcpy(ka, (void*)P2K(PTE_ADDRESS(*pte)), PAGE_SIZE);
@@ -192,7 +191,7 @@ void free_sections(struct pgdir* pd){
 		if(section->flags & ST_SWAP){
 			swapin(pd, section);
 		}
-		for(u64 va = section->begin; va < section->end; va += PAGE_SIZE){
+		for(u64 va = PAGE_BASE(section->begin); va < section->end; va += PAGE_SIZE){
 			auto pte = get_pte(pd, va, false);
 			if(pte != NULL && (*pte & PTE_VALID)){
 				void* ka = (void*)P2K(PTE_ADDRESS(*pte));

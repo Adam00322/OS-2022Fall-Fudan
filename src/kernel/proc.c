@@ -301,13 +301,19 @@ int fork() {
     auto p = thisproc();
 
     copy_sections(&p->pgdir.section_head, &np->pgdir.section_head);
-    PTEntriesPtr pte;
-    u64 va = 0;
-    while((pte = get_pte(&p->pgdir, va, false)) != NULL && (*pte & PTE_VALID)){
-        vmmap(&np->pgdir, va, (void*)P2K(PTE_ADDRESS(*pte)), PTE_FLAGS(*pte) | PTE_RO);
-        va += PAGE_SIZE;
+    _for_in_list(sp, &p->pgdir.section_head){
+        if(sp == &p->pgdir.section_head) continue;
+        auto s = container_of(sp, struct section, stnode);
+        for(u64 va = PAGE_BASE(s->begin); va <= PAGE_BASE(s->end); va += PAGE_SIZE){
+            auto pte = get_pte(&p->pgdir, va, false);
+            if(pte != NULL && (*pte & PTE_VALID)){
+                vmmap(&np->pgdir, va, (void*)P2K(PTE_ADDRESS(*pte)), PTE_FLAGS(*pte) | PTE_RO);
+                //*pte |= PTE_RO;
+            }
+        }
     }
 
+    memcpy(np->kstack, p->kstack, PAGE_SIZE);
     *np->ucontext = *p->ucontext;
     np->ucontext->x[0] = 0;
 
@@ -316,7 +322,6 @@ int fork() {
             np->oftable.fp[i] = filedup(p->oftable.fp[i]);
     }
     np->cwd = inodes.share(p->cwd);
-
     set_parent_to_this(np);
     start_proc(np, trap_return, 0);
     return np->pid;

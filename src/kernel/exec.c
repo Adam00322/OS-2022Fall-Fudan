@@ -113,36 +113,63 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 	bcache.end_op(&ctx);
 	// Step3
 	sp = PAGE_BASE(sp+PAGE_SIZE-1);
-	for(int i=0; i<5; i++){
-		vmmap(&pd, sp, alloc_page_for_user(), PTE_USER_DATA);
-		sp += PAGE_SIZE;
+	struct section* s = kalloc(sizeof(struct section));
+	init_sleeplock(&s->sleeplock);
+	s->length = 5*PAGE_SIZE;
+	s->begin = sp;
+	s->end = s->begin + s->length;
+	s->flags = ST_STACK;
+	_insert_into_list(&pd.section_head, &s->stnode);
+	sp = s->end - 64;
+
+	u64 envc = 0;
+	char* envpp[32] = {NULL};
+	if(envp){
+		while(envp[envc]){
+			if(envc >= 32) return error(NULL, NULL, &pd);
+			sp -= strlen(envp[envc]) + 1;
+			copyout(&pd, (void*)sp, envp[envc], strlen(envp[envc]) + 1);
+			envpp[envc] = (char*)sp;
+			envc++;
+		}
 	}
 
-	int argc = 0;
+	u64 argc = 0;
+	char* argvp[32] = {NULL};
 	if(argv){
-		for(argc = 0; argv[argc]; argc++){
+		while(argv[argc]){
 			if(argc >= 32) return error(NULL, NULL, &pd);
 			sp -= strlen(argv[argc]) + 1;
+			copyout(&pd, (void*)sp, argv[argc], strlen(argv[argc]) + 1);
+			argvp[argc] = (char*)sp;
+			argc++;
 		}
-		sp -= 1;
-		sp -= sp%4 + sizeof(int);
-		copyout(&pd, (void*)sp, &argc, sizeof(int));
-		for(u64 i = sp + sizeof(int) + sizeof(void*), j = 0; j<=(u64)argc; j++){
-			copyout(&pd, (void*)i, argv[j], strlen(argv[j]) + 1);
-			i += strlen(argv[j]) + 1;
-		}
-	}else{
-		sp -= sizeof(int);
-		copyout(&pd, (void*)sp, &argc, sizeof(int));
 	}
+	
+	sp -= sp%8;
+	for(int i = envc; i >= 0; i--){
+		sp -= sizeof(char*);
+		copyout(&pd, (void*)sp, &envpp[i], sizeof(char*));
+	}
+	for(int i = argc; i >= 0; i--){
+		sp -= sizeof(char*);
+		copyout(&pd, (void*)sp, &argvp[i], sizeof(char*));
+	}
+	sp -= sizeof(u64);
+	copyout(&pd, (void*)sp, &argc, sizeof(u64));
+
 	p->ucontext->sp_el0 = sp;
 	p->ucontext->x[0] = argc;
-	p->ucontext->x[1] = (u64)argv;
+	p->ucontext->x[1] = sp + sizeof(u64);
 	p->ucontext->elr = elf.e_entry;
 	// Final
 	free_pgdir(&p->pgdir);
 	p->pgdir = pd;
 	copy_sections(&pd.section_head, &p->pgdir.section_head);
+	_for_in_list(stp, &pd.section_head){
+		if(stp == &pd.section_head) continue;
+		kfree(container_of(stp, struct section, stnode));
+	}
 	attach_pgdir(&pd);
-	return 0;
+	return argc;
 }

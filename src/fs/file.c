@@ -108,7 +108,7 @@ isize filewrite(struct file* f, char* addr, isize n) {
             OpContext ctx;
             bcache.begin_op(&ctx);
             inodes.lock(f->ip);
-            t += inodes.write(&ctx, f->ip, (u8*)addr, f->off, t);
+            t = inodes.write(&ctx, f->ip, (u8*)addr, f->off, t);
             f->off += t;
             inodes.unlock(f->ip);
             bcache.end_op(&ctx);

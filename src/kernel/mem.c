@@ -37,23 +37,23 @@ void* kalloc_page()
 {
     _decrement_rc(&alloc_page_cnt);
     auto p = fetch_from_queue(&pages);
-    auto page = page_ref[K2P(p) / PAGE_SIZE];
-    page.ref = 0;
-    init_spinlock(&page.lock);
+    auto page = &page_ref[K2P(p) / PAGE_SIZE];
+    page->ref = 0;
+    init_spinlock(&page->lock);
     return p;
 }
 
 void kfree_page(void* p)
 {
-    if(p == zero_page) return;
-    auto page = page_ref[K2P(p) / PAGE_SIZE];
-    _acquire_spinlock(&page.lock);
-    page.ref--;
-    if(page.ref <= 0){
+    if(p == zero_page || p < (void*)PAGE_BASE((u64)&end)) return;
+    auto page = &page_ref[K2P(p) / PAGE_SIZE];
+    _acquire_spinlock(&page->lock);
+    page->ref--;
+    if(page->ref <= 0){
         _increment_rc(&alloc_page_cnt);
         add_to_queue(&pages, (QueueNode*)p);
     }
-    _release_spinlock(&page.lock);
+    _release_spinlock(&page->lock);
 }
 
 
@@ -122,8 +122,8 @@ void read_page_from_disk(void* ka, u32 bno){
 }
 
 void increment_ref(void* ka){
-    auto page = page_ref[K2P(ka) / PAGE_SIZE];
-    _acquire_spinlock(&page.lock);
-    page.ref++;
-    _release_spinlock(&page.lock);
+    auto page = &page_ref[K2P(ka) / PAGE_SIZE];
+    _acquire_spinlock(&page->lock);
+    page->ref++;
+    _release_spinlock(&page->lock);
 }

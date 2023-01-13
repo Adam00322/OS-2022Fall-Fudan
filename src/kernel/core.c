@@ -23,6 +23,7 @@ NO_RETURN void idle_entry() {
 
 extern void icode();
 extern void eicode();
+extern void trap_return();
 void kernel_entry() {
     printk("hello world %d\n", (int)sizeof(struct proc));
 
@@ -37,8 +38,12 @@ void kernel_entry() {
 
     // TODO: map init.S to user space and trap_return to run icode
     auto p = thisproc();
-    vmmap(&p->pgdir, 0x0, (void*)PAGE_BASE((u64)icode), PTE_USER_DATA | PTE_RO);
-    set_return_addr((u64)icode - PAGE_BASE((u64)icode));
+    for(u64 va = PAGE_BASE((u64)icode); va <= (u64)eicode; va += PAGE_SIZE){
+        vmmap(&p->pgdir, 0x0, (void*)va, PTE_USER_DATA | PTE_RO);
+    }
+    p->cwd = inodes.root;
+    p->ucontext->elr = (u64)icode - PAGE_BASE((u64)icode);
+    set_return_addr(trap_return);
 }
 
 NO_INLINE NO_RETURN void _panic(const char* file, int line) {
