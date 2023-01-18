@@ -17,6 +17,7 @@ void syscall_entry(UserContext* context)
     if (id < NR_SYSCALL)
     {
         u64 (*p) (u64, u64, u64, u64, u64, u64) = syscall_table[id];
+        if(p == NULL) PANIC();
         ret = p(context->x[0], context->x[1], context->x[2], context->x[3], context->x[4], context->x[5]);
         context->x[0] = ret;
     }

@@ -138,6 +138,7 @@ define_syscall(close, int fd) {
     /* TODO: Lab10 Shell */
     if(fd >= NOFILE || fd < 0)
         return -1;
+    fileclose(fd2file(fd));
     thisproc()->oftable.fp[fd] = NULL;
     return 0;
 }
@@ -266,7 +267,7 @@ Inode* create(const char* path, short type, short major, short minor, OpContext*
     /* TODO: Lab10 Shell */
     char name[FILE_NAME_MAX_LENGTH];
     Inode* parentinode = nameiparent(path, name, ctx);
-    if(parentinode == NULL || inodes.lookup(parentinode, name, NULL) != 0)
+    if(parentinode == NULL)
         return NULL;
 
     usize inode_no;
@@ -278,7 +279,7 @@ Inode* create(const char* path, short type, short major, short minor, OpContext*
         inode = inodes.get(inode_no);
         inodes.lock(inode);
         if(type == inode->entry.type)
-            return parentinode;
+            return inode;
         inodes.unlock(inode);
         inodes.put(ctx, inode);
         return NULL;

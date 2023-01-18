@@ -5,6 +5,7 @@
 #include<driver/uart.h>
 #include<driver/interrupt.h>
 #define INPUT_BUF 128
+struct proc* shell, *shellchild;
 struct {
     char buf[INPUT_BUF];
     usize r;  // Read index
@@ -42,6 +43,7 @@ isize console_read(Inode *ip, char *dst, isize n) {
     // TODO
     ASSERT(ip->entry.type == INODE_DEVICE);
     inodes.unlock(ip);
+    shell = thisproc();
     isize i = 0;
     _acquire_spinlock(&input.lock);
     while(i != n && input.buf[input.r % INPUT_BUF] != C('D')){
@@ -88,7 +90,10 @@ void console_intr() {
                 break;
             
             case C('C'):
-                ASSERT(kill(thisproc()->pid) != -1);
+                if(shellchild){
+                    ASSERT(kill(shellchild->pid) != -1);
+                    shellchild = NULL;
+                }
                 break;
 
             default:

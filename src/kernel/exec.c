@@ -21,6 +21,9 @@ static int error(OpContext* ctx, Inode* inode, struct pgdir* pd){
 		inodes.put(ctx, inode);
 		bcache.end_op(ctx);
 	}
+	if(ctx){
+		bcache.end_op(ctx);
+	}
 	if(pd){
 		free_pgdir(pd);
 	}

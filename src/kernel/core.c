@@ -38,8 +38,8 @@ void kernel_entry() {
 
     // TODO: map init.S to user space and trap_return to run icode
     auto p = thisproc();
-    for(u64 va = PAGE_BASE((u64)icode); va <= (u64)eicode; va += PAGE_SIZE){
-        vmmap(&p->pgdir, 0x0, (void*)va, PTE_USER_DATA | PTE_RO);
+    for(u64 ka = PAGE_BASE((u64)icode), va = 0x0; ka <= (u64)eicode; va += PAGE_SIZE, ka += PAGE_SIZE){
+        vmmap(&p->pgdir, va, (void*)ka, PTE_USER_DATA | PTE_RO);
     }
     p->cwd = inodes.root;
     p->ucontext->elr = (u64)icode - PAGE_BASE((u64)icode);

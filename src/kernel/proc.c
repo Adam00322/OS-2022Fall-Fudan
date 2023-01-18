@@ -10,6 +10,8 @@
 struct proc root_proc;
 extern struct container root_container;
 
+extern struct proc* shell, *shellchild;
+
 void kernel_entry();
 void proc_entry();
 
@@ -109,7 +111,10 @@ NO_RETURN void exit(int code)
     ASSERT(this != this->container->rootproc && !this->idle);
     this->exitcode = code;
     free_pgdir(&this->pgdir);
-    //TODO clean up file resources
+    for(int i = 0; i < NOFILE; i++){
+        if(this->oftable.fp[i] != NULL)
+            fileclose(this->oftable.fp[i]);
+    }
     struct proc* rootproc = this->container->rootproc;
     _acquire_spinlock(&tree_lock);
     ListNode* pre = NULL;
@@ -181,6 +186,7 @@ int kill(int pid)
     // TODO
     // Set the killed flag of the proc to true and return 0.
     // Return -1 if the pid is invalid (proc not found).
+    if(pid < 0) return -1;
     _acquire_spinlock(&tree_lock);
     auto p = _hashmap_lookup(&(hashpid_t){pid, NULL, {NULL}}.node, &h, hash, hashcmp);
     if(p != NULL){
@@ -300,6 +306,8 @@ int fork() {
     auto np = create_proc();
     auto p = thisproc();
 
+    if(p == shell) shellchild = np;
+
     copy_sections(&p->pgdir.section_head, &np->pgdir.section_head);
     _for_in_list(sp, &p->pgdir.section_head){
         if(sp == &p->pgdir.section_head) continue;
@@ -308,7 +316,6 @@ int fork() {
             auto pte = get_pte(&p->pgdir, va, false);
             if(pte != NULL && (*pte & PTE_VALID)){
                 vmmap(&np->pgdir, va, (void*)P2K(PTE_ADDRESS(*pte)), PTE_FLAGS(*pte) | PTE_RO);
-                //*pte |= PTE_RO;
             }
         }
     }
@@ -324,5 +331,5 @@ int fork() {
     np->cwd = inodes.share(p->cwd);
     set_parent_to_this(np);
     start_proc(np, trap_return, 0);
-    return np->pid;
+    return np->localpid;
 }
