@@ -316,9 +316,11 @@ int fork() {
             auto pte = get_pte(&p->pgdir, va, false);
             if(pte != NULL && (*pte & PTE_VALID)){
                 vmmap(&np->pgdir, va, (void*)P2K(PTE_ADDRESS(*pte)), PTE_FLAGS(*pte) | PTE_RO);
+                *pte |= PTE_RO;
             }
         }
     }
+    arch_tlbi_vmalle1is();
 
     memcpy(np->kstack, p->kstack, PAGE_SIZE);
     *np->ucontext = *p->ucontext;

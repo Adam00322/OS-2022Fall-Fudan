@@ -20,11 +20,9 @@ int pipeAlloc(File** f0, File** f1) {
     pi->nread = pi->nwrite = 0;
     pi->readopen = pi->writeopen = 1;
     
-    memset(*f0, 0, sizeof(File));
-    memset(*f1, 0, sizeof(File));
     (*f0)->type = (*f1)->type = FD_PIPE;
-    (*f0)->readable = 1;
-    (*f1)->writable = 1;
+    (*f0)->readable = (*f1)->writable = 1;
+    (*f0)->writable = (*f1)->readable = 0;
     (*f0)->pipe = (*f1)->pipe = pi;
     
     return 0;
@@ -50,6 +48,7 @@ void pipeClose(Pipe* pi, int writable) {
 
 int pipeWrite(Pipe* pi, u64 addr, int n) {
     // TODO
+    if(!pi->writeopen) return 0;
     char* src = (char*)addr;
     int i = 0;
     _acquire_spinlock(&pi->lock);
@@ -75,6 +74,7 @@ int pipeWrite(Pipe* pi, u64 addr, int n) {
 
 int pipeRead(Pipe* pi, u64 addr, int n) {
     // TODO
+    if(!pi->readopen) return 0;
     char* dst = (char*)addr;
     int i = 0;
     _acquire_spinlock(&pi->lock);
@@ -92,6 +92,7 @@ int pipeRead(Pipe* pi, u64 addr, int n) {
             _acquire_spinlock(&pi->lock);
         }
         dst[i++] = pi->data[pi->nread++ % PIPESIZE];
+        if(dst[i-1] == '\n') break;
     }
     _release_spinlock(&pi->lock);
     post_all_sem(&pi->wlock);

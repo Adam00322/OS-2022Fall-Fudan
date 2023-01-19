@@ -61,7 +61,7 @@ u64 sbrk(i64 size){
 		begin = MAX(begin, section->end);
 	}
 	if(size < 0) PANIC();
-	auto s = init_heap(&pd->section_head, PAGE_BASE(begin) + 5 * PAGE_SIZE);
+	auto s = init_heap(&pd->section_head, PAGE_BASE(begin) + (PAGE_SIZE<<2));
 	s->end += size*PAGE_SIZE;
 	return s->end;
 }	
@@ -150,18 +150,19 @@ int pgfault(u64 iss){
 	ASSERT(st);
 	auto pte = get_pte(pd, addr, true);
 	if((*pte & PTE_VALID) == 0){
-		// if(st->flags & ST_FILE){
-		// 	auto inode = st->fp->ip;
-		// 	auto ka = alloc_page_for_user();
-		// 	inodes.read(inode, ka, st->offset+PAGE_BASE(addr)-st->begin, PAGE_SIZE);
-		// 	u64 flags = PTE_USER_DATA;
-		// 	if(st->flags & ST_RO) flags |= PTE_RO;
-		// 	vmmap(pd, addr, ka, flags);
-		// }else{
-		if(st->flags & ST_SWAP)
-			swapin(pd, st);
-		if(*pte == NULL)
-			vmmap(pd, addr, alloc_page_for_user(), PTE_USER_DATA);
+		if(st->flags & ST_FILE){
+			auto inode = st->fp->ip;
+			auto ka = alloc_page_for_user();
+			inodes.read(inode, ka, st->offset+PAGE_BASE(addr)-st->begin, PAGE_SIZE);
+			u64 flags = PTE_USER_DATA;
+			if(st->flags & ST_RO) flags |= PTE_RO;
+			vmmap(pd, addr, ka, flags);
+		}else{
+			if(st->flags & ST_SWAP)
+				swapin(pd, st);
+			if(*pte == NULL)
+				vmmap(pd, addr, alloc_page_for_user(), PTE_USER_DATA);
+		}
 	}else if((*pte) & PTE_RO){
 		auto ka = alloc_page_for_user();
 		memcpy(ka, (void*)P2K(PTE_ADDRESS(*pte)), PAGE_SIZE);

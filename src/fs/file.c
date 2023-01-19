@@ -29,7 +29,7 @@ struct file* filealloc() {
     /* TODO: Lab10 Shell */
     _acquire_spinlock(&ftable.lock);
     for(int i=0; i<NOFILE; i++){
-        if(ftable.file[i].ref == 0){
+        if(ftable.file[i].ref <= 0){
             ftable.file[i].ref = 1;
             _release_spinlock(&ftable.lock);
             return &ftable.file[i];
@@ -64,6 +64,7 @@ void fileclose(struct file* f) {
             bcache.end_op(&ctx);
         }else if(f->type == FD_PIPE){
             pipeClose(f->pipe, f->writable);
+            _release_spinlock(&ftable.lock);
         }
         return;
     }

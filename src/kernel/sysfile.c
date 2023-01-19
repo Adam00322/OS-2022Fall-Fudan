@@ -66,19 +66,66 @@ define_syscall(ioctl, int fd, u64 request) {
  */
 define_syscall(mmap, void* addr, int length, int prot, int flags, int fd, int offset) {
     // TODO
-    addr = addr;
-    length = length;
-    prot = prot;
+    if(!fd2file(fd) || fd2file(fd)->type != FD_INODE) return -1;
+    struct section* st = kalloc(sizeof(struct section));
+    auto pd = &thisproc()->pgdir;
+    if(!addr){
+        u64 begin = 0;
+        _for_in_list(p, &pd->section_head){
+            if(p == &pd->section_head) continue;
+            auto s = container_of(p, struct section, stnode);
+            begin = MAX(begin, s->end);
+        }
+        addr = (void*)PAGE_BASE(begin + (PAGE_SIZE<<4));
+    }
+    st->length = length;
+    st->begin = (u64)addr;
+    st->end = st->begin + st->length;
+    if(prot & PROT_WRITE) st->flags = ST_FILE;
+    else st->flags = ST_FILE | ST_RO;
+    st->fp = fd2file(fd);
+    st->offset = offset;
+    init_sleeplock(&st->sleeplock);
+    _insert_into_list(&pd->section_head, &st->stnode);
+
     flags = flags;
-    fd =fd;
-    offset = offset;
     return 0;
 }
 
 define_syscall(munmap, void *addr, int length) {
     // TODO
-    addr = addr;
-    length = length;
+    struct section* st = NULL;
+    auto pd = &thisproc()->pgdir;
+    _for_in_list(p, &pd->section_head){
+        if(p == &pd->section_head) continue;
+        auto s = container_of(p, struct section, stnode);
+        if((u64)addr >= s->begin && (u64)addr + length < s->end){
+			st = s;
+			break;
+		}
+    }
+    if(!st) return -1;
+    OpContext ctx;
+    bcache.begin_op(&ctx);
+    inodes.write(&ctx, st->fp->ip, addr, st->offset + (u64)addr - st->begin, length);
+    bcache.end_op(&ctx);
+    _detach_from_list(&st->stnode);
+    if((u64)addr > st->begin){
+        struct section* ns = kalloc(sizeof(struct section));
+        *ns = *st;
+        ns->end = (u64)addr;
+        ns->length = ns->end - ns->begin;
+        _insert_into_list(&pd->section_head, &ns->stnode);
+    }
+    if((u64)addr + length < st->end){
+        struct section* ns = kalloc(sizeof(struct section));
+        *ns = *st;
+        ns->begin = (u64)addr + length;
+        ns->length = ns->end - ns->begin;
+        ns->offset += ns->begin - st->begin;
+        _insert_into_list(&pd->section_head, &ns->stnode);
+    }
+    kfree(st);
     return 0;
 }
 

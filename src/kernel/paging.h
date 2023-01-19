@@ -12,6 +12,11 @@
 #define ST_DATA   ST_FILE 
 #define ST_BSS    ST_FILE	
 
+#define PROT_NONE      0
+#define PROT_READ      1
+#define PROT_WRITE     2
+#define PROT_EXEC      4
+
 struct section{
     u64 flags;
     SleepLock sleeplock;

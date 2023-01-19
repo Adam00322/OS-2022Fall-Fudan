@@ -46,7 +46,7 @@ isize console_read(Inode *ip, char *dst, isize n) {
     shell = thisproc();
     isize i = 0;
     _acquire_spinlock(&input.lock);
-    while(i != n && input.buf[input.r % INPUT_BUF] != C('D')){
+    while(i != n){
         while(input.r == input.w){
             _lock_sem(&input.read);
             _release_spinlock(&input.lock);
@@ -56,9 +56,11 @@ isize console_read(Inode *ip, char *dst, isize n) {
             }
             _acquire_spinlock(&input.lock);
         }
+        if(input.buf[input.r % INPUT_BUF] == C('D')) break;
         dst[i++] = input.buf[input.r++ % INPUT_BUF];
         if(dst[i-1] == '\n') break;
     }
+    if(i == 0 && input.buf[input.r % INPUT_BUF] == C('D')) input.r++;
     _release_spinlock(&input.lock);
     inodes.lock(ip);
     return i;
