@@ -103,7 +103,16 @@ define_syscall(read, int fd, char* buffer, int size) {
     struct file* f = fd2file(fd);
     if (!f || size <= 0 || !user_writeable(buffer, size))
         return -1;
-    return fileread(f, buffer, size);
+    char* ka = alloc_page_for_user();
+    int i = 0;
+    while(i < size){
+        int t = fileread(f, ka, MIN(PAGE_SIZE, size - i));
+        memcpy(buffer + i, ka, MAX(t, 0));
+        i += t;
+        if(t != MIN(PAGE_SIZE, size - i)) break;
+    }
+    kfree_page(ka);
+    return i;
 }
 
 /*
@@ -113,7 +122,17 @@ define_syscall(write, int fd, char* buffer, int size) {
     struct file* f = fd2file(fd);
     if (!f || size <= 0 || !user_readable(buffer, size))
         return -1;
-    return filewrite(f, buffer, size);
+    char* ka = alloc_page_for_user();
+    int i = 0;
+    while(i < size){
+        int t = MIN(PAGE_SIZE, size - i);
+        memcpy(ka, buffer + i, t);
+        t = filewrite(f, ka, t);
+        i += t;
+        if(t != MIN(PAGE_SIZE, size - i)) break;
+    }
+    kfree_page(ka);
+    return i;
 }
 
 define_syscall(writev, int fd, struct iovec *iov, int iovcnt) {
@@ -122,11 +141,21 @@ define_syscall(writev, int fd, struct iovec *iov, int iovcnt) {
     if (!f || iovcnt <= 0 || !user_readable(iov, sizeof(struct iovec) * iovcnt))
         return -1;
     usize tot = 0;
+    char* ka = alloc_page_for_user();
     for (p = iov; p < iov + iovcnt; p++) {
         if (!user_readable(p->iov_base, p->iov_len))
             return -1;
-        tot += filewrite(f, p->iov_base, p->iov_len);
+        int i = 0;
+        while(i < (int)p->iov_len){
+            int t = MIN(PAGE_SIZE, (int)p->iov_len - i);
+            memcpy(ka, p->iov_base + i, t);
+            t = filewrite(f, ka, t);
+            i += t;
+            if(t != MIN(PAGE_SIZE, (int)p->iov_len - i)) break;
+        }
+        tot += i;
     }
+    kfree_page(ka);
     return tot;
 }
 

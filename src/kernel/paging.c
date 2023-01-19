@@ -184,7 +184,7 @@ void init_sections(ListNode* section_head){
 }
 
 void free_sections(struct pgdir* pd){
-	ListNode* pre = NULL;
+	struct section* pre = NULL;
 	_for_in_list(p, &pd->section_head){
 		if(p == &pd->section_head) continue;
 		auto section = container_of(p, struct section, stnode);
@@ -199,7 +199,7 @@ void free_sections(struct pgdir* pd){
 			}
 		}
 		if(pre != NULL) kfree(pre);
-		pre = p;
+		pre = section;
 	}
 	if(pre != NULL) kfree(pre);
 }
