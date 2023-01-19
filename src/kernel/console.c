@@ -92,9 +92,8 @@ void console_intr() {
                 break;
             
             case C('C'):
-                if(shellchild){
-                    ASSERT(kill(shellchild->pid) != -1);
-                    shellchild = NULL;
+                if(!thisproc()->idle){
+                    ASSERT(kill(thisproc()->pid) != -1);
                 }
                 break;
 
