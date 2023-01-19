@@ -38,15 +38,15 @@ u64 sbrk(i64 size){
 		if(section->flags & ST_HEAP){
 			u64 end = section->end;
 			if(size >= 0){
-				section->end += size*PAGE_SIZE;
+				section->end += size;
 			}else{
 				size = -1 * size;
-				if(section->end < size*PAGE_SIZE + section->begin) PANIC();
+				if(section->end < size + section->begin) PANIC();
 				if(section->flags & ST_SWAP){
 					swapin(pd, section);
 				}
-				section->end -= size*PAGE_SIZE;
-				for(u64 va = section->end; va < end; va += PAGE_SIZE){
+				section->end -= size;
+				for(u64 va = PAGE_BASE(section->end + PAGE_SIZE -1); va < PAGE_BASE(end); va += PAGE_SIZE){
 					auto pte = get_pte(pd, va, false);
 					if(pte != NULL && (*pte & PTE_VALID)){
 						void* ka = (void*)P2K(PTE_ADDRESS(*pte));
@@ -62,7 +62,7 @@ u64 sbrk(i64 size){
 	}
 	if(size < 0) PANIC();
 	auto s = init_heap(&pd->section_head, PAGE_BASE(begin) + (PAGE_SIZE<<2));
-	s->end += size*PAGE_SIZE;
+	s->end += size;
 	return s->end;
 }	
 
@@ -147,7 +147,7 @@ int pgfault(u64 iss){
 			break;
 		}
 	}
-	ASSERT(st);
+	if(!st) return -1;
 	auto pte = get_pte(pd, addr, true);
 	if((*pte & PTE_VALID) == 0){
 		if(st->flags & ST_FILE){
