@@ -376,7 +376,7 @@ Inode* create(const char* path, short type, short major, short minor, OpContext*
     inode->entry.num_links = 1;
     inodes.sync(ctx, inode, true);
     if(type == INODE_DIRECTORY){
-        inodes.insert(ctx, inode, ".", ROOT_INODE_NO);
+        inodes.insert(ctx, inode, ".", inode_no);
         inodes.insert(ctx, inode, "..", parentinode->inode_no);
     }
     return inode;
